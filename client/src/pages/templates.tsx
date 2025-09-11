@@ -134,7 +134,15 @@ export default function Templates() {
     }
   ];
 
-  const filteredTemplates = (templates || featuredTemplates).filter(template => {
+  // Combine database templates with featured templates if database is empty
+  const allTemplates = templates && templates.length > 0 
+    ? templates.map(t => ({ ...t, tags: t.tags || [] }))
+    : [
+        ...featuredTemplates,
+        ...(templates || []).map(t => ({ ...t, tags: t.tags || [] }))
+      ];
+
+  const filteredTemplates = allTemplates.filter(template => {
     const matchesCategory = selectedCategory === "all" || 
       template.category.toLowerCase() === selectedCategory.toLowerCase();
     const matchesSearch = !searchQuery || 
@@ -145,19 +153,10 @@ export default function Templates() {
   });
 
   const handleUseTemplate = (template: any) => {
-    if (template.id.startsWith('featured-')) {
-      // Handle featured templates by creating a new workspace
-      useTemplateMutation.mutate({
-        templateId: template.id,
-        theme: selectedTheme
-      });
-    } else {
-      // Handle real templates from API
-      useTemplateMutation.mutate({
-        templateId: template.id,
-        theme: selectedTheme
-      });
-    }
+    useTemplateMutation.mutate({
+      templateId: template.id,
+      theme: selectedTheme
+    });
   };
 
   return (

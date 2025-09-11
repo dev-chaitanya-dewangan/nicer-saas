@@ -14,7 +14,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2023-10-16",
+  apiVersion: "2025-08-27.basil",
 }) : null;
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -55,11 +55,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check usage limits
-      if (user.monthlyUsage >= user.usageLimit) {
+      if ((user.monthlyUsage || 0) >= (user.usageLimit || 3)) {
         return res.status(403).json({ 
           message: "Monthly usage limit reached. Please upgrade your plan.",
-          usageLimit: user.usageLimit,
-          currentUsage: user.monthlyUsage
+          usageLimit: user.usageLimit || 3,
+          currentUsage: user.monthlyUsage || 0
         });
       }
 
@@ -194,6 +194,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Initialize templates if none exist
+  const initializeTemplates = async () => {
+    try {
+      const existingTemplates = await storage.getTemplates();
+      if (existingTemplates.length === 0) {
+        const defaultTemplates = [
+          {
+            title: "SaaS CRM System",
+            description: "Complete customer relationship management with lead tracking, deal pipeline, and revenue analytics.",
+            category: "business",
+            prompt: "Create a comprehensive SaaS CRM system with lead tracking, deal pipeline management, revenue analytics, churn rate calculations, and customer communication logs.",
+            tags: ["Leads Database", "Deal Pipeline", "Analytics"],
+            preview: {
+              databases: 3,
+              properties: 25,
+              views: 8
+            },
+            isPublic: true,
+            usageCount: 0
+          },
+          {
+            title: "Project Management Hub",
+            description: "Task boards, timelines, resource allocation, and team coordination in one workspace.",
+            category: "productivity",
+            prompt: "Build a project management workspace with task boards, timeline views, resource allocation, team coordination, milestone tracking, and progress reporting.",
+            tags: ["Kanban Boards", "Timeline", "Resources"],
+            preview: {
+              databases: 4,
+              properties: 20,
+              views: 6
+            },
+            isPublic: true,
+            usageCount: 0
+          },
+          {
+            title: "Content Calendar",
+            description: "Multi-platform content planning with collaboration tools and performance analytics.",
+            category: "marketing",
+            prompt: "Create a content calendar workspace for multi-platform content planning, collaboration tools, publishing schedules, performance analytics, and content ideation.",
+            tags: ["Multi-Platform", "Collaboration", "Analytics"],
+            preview: {
+              databases: 3,
+              properties: 18,
+              views: 5
+            },
+            isPublic: true,
+            usageCount: 0
+          },
+          {
+            title: "Life Organization System",
+            description: "Habit tracking, goal management, and personal productivity system for life organization.",
+            category: "personal",
+            prompt: "Design a personal life organization system with habit tracking, goal management, daily journaling, mood tracking, and personal productivity metrics.",
+            tags: ["Habit Tracker", "Goals", "Journal"],
+            preview: {
+              databases: 4,
+              properties: 22,
+              views: 7
+            },
+            isPublic: true,
+            usageCount: 0
+          },
+          {
+            title: "E-commerce Operations",
+            description: "Product catalog, order management, inventory tracking, and customer support system.",
+            category: "business",
+            prompt: "Build an e-commerce operations workspace with product catalog, order management, inventory tracking, customer support tickets, and sales analytics.",
+            tags: ["Products", "Orders", "Inventory"],
+            preview: {
+              databases: 5,
+              properties: 30,
+              views: 10
+            },
+            isPublic: true,
+            usageCount: 0
+          }
+        ];
+        
+        for (const template of defaultTemplates) {
+          await storage.createTemplate(template);
+        }
+        console.log('Initialized default templates');
+      }
+    } catch (error) {
+      console.error('Error initializing templates:', error);
+    }
+  };
+  
+  // Initialize templates on startup
+  await initializeTemplates();
+
   // Template routes
   app.get('/api/templates', async (req, res) => {
     try {
@@ -224,10 +315,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/templates/:id/use', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const template = await storage.getTemplate(req.params.id);
+      const templateId = req.params.id;
       
-      if (!template) {
-        return res.status(404).json({ message: "Template not found" });
+      // Handle both database templates and featured templates
+      let template;
+      let prompt;
+      let title;
+      let description;
+      
+      if (templateId.startsWith('featured-')) {
+        // Handle featured templates with hardcoded data
+        const featuredTemplates = {
+          'featured-crm': {
+            title: 'SaaS CRM System',
+            description: 'Complete customer relationship management with lead tracking, deal pipeline, and revenue analytics.',
+            prompt: 'Create a comprehensive SaaS CRM system with lead tracking, deal pipeline management, revenue analytics, churn rate calculations, and customer communication logs.'
+          },
+          'featured-project': {
+            title: 'Project Management Hub', 
+            description: 'Task boards, timelines, resource allocation, and team coordination in one workspace.',
+            prompt: 'Build a project management workspace with task boards, timeline views, resource allocation, team coordination, milestone tracking, and progress reporting.'
+          },
+          'featured-content': {
+            title: 'Content Calendar',
+            description: 'Multi-platform content planning with collaboration tools and performance analytics.',
+            prompt: 'Create a content calendar workspace for multi-platform content planning, collaboration tools, publishing schedules, performance analytics, and content ideation.'
+          },
+          'featured-personal': {
+            title: 'Life Organization System',
+            description: 'Habit tracking, goal management, and personal productivity system for life organization.',
+            prompt: 'Design a personal life organization system with habit tracking, goal management, daily journaling, mood tracking, and personal productivity metrics.'
+          },
+          'featured-ecommerce': {
+            title: 'E-commerce Operations',
+            description: 'Product catalog, order management, inventory tracking, and customer support system.',
+            prompt: 'Build an e-commerce operations workspace with product catalog, order management, inventory tracking, customer support tickets, and sales analytics.'
+          }
+        };
+        
+        const featuredTemplate = featuredTemplates[templateId as keyof typeof featuredTemplates];
+        if (!featuredTemplate) {
+          return res.status(404).json({ message: "Featured template not found" });
+        }
+        
+        title = featuredTemplate.title;
+        description = featuredTemplate.description;
+        prompt = featuredTemplate.prompt;
+      } else {
+        // Handle database templates
+        template = await storage.getTemplate(templateId);
+        if (!template) {
+          return res.status(404).json({ message: "Template not found" });
+        }
+        title = template.title;
+        description = template.description;
+        prompt = template.prompt;
       }
 
       const user = await storage.getUser(userId);
@@ -236,29 +378,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check usage limits
-      if (user.monthlyUsage >= user.usageLimit) {
+      if ((user.monthlyUsage || 0) >= (user.usageLimit || 3)) {
         return res.status(403).json({ 
           message: "Monthly usage limit reached. Please upgrade your plan.",
-          usageLimit: user.usageLimit,
-          currentUsage: user.monthlyUsage
+          usageLimit: user.usageLimit || 3,
+          currentUsage: user.monthlyUsage || 0
         });
       }
 
       // Create workspace from template
       const workspace = await storage.createWorkspace({
         userId,
-        title: template.title,
-        description: template.description,
-        prompt: template.prompt,
+        title,
+        description,
+        prompt,
         theme: req.body.theme || "professional",
-        templateId: template.id,
+        templateId: templateId.startsWith('featured-') ? undefined : templateId,
         status: "generating"
       });
 
       // Generate AI response
       try {
         const aiResponse = await generateNotionWorkspace(
-          template.prompt,
+          prompt,
           req.body.theme || "professional"
         );
 
@@ -267,8 +409,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "completed"
         });
 
-        // Increment template usage and user usage
-        await storage.incrementTemplateUsage(template.id);
+        // Increment template usage only for database templates
+        if (template) {
+          await storage.incrementTemplateUsage(template.id);
+        }
+        
         await storage.updateUserUsage(userId, 1);
 
         res.json(updatedWorkspace);
