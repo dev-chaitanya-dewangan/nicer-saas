@@ -240,10 +240,29 @@ export function WorkspacePreview({ workspace }: WorkspacePreviewProps) {
                       <div>
                         <h5 className="font-medium text-sm">{page.title}</h5>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {(page.content || '').length > 100 
-                            ? `${(page.content || '').substring(0, 100)}...` 
-                            : page.content || 'No content'
-                          }
+                          {(() => {
+                            if (!page.content) return 'No content';
+                            
+                            // Handle case where content is an object with text/type structure
+                            let contentString = '';
+                            if (typeof page.content === 'object') {
+                              if (Array.isArray(page.content)) {
+                                contentString = page.content
+                                  .map(block => typeof block === 'object' && block.text ? block.text : String(block))
+                                  .join(' ');
+                              } else if (page.content.text) {
+                                contentString = page.content.text;
+                              } else {
+                                contentString = JSON.stringify(page.content);
+                              }
+                            } else {
+                              contentString = String(page.content);
+                            }
+                            
+                            return contentString.length > 100 
+                              ? `${contentString.substring(0, 100)}...` 
+                              : contentString;
+                          })()}
                         </p>
                       </div>
                       <Badge variant="outline" className="text-xs">
