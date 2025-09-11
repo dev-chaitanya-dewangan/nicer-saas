@@ -71,94 +71,101 @@ async function deployWorkspaceToNotion(notion: any, workspaceData: any): Promise
 
     // Create databases from the workspace data
     if (workspaceData.databases && Array.isArray(workspaceData.databases)) {
-      const databasePromises = workspaceData.databases.map(async (db: any) => {
-        // Transform properties to Notion format
-        const notionProperties: any = {};
-        
-        if (db.properties && Array.isArray(db.properties)) {
-          db.properties.forEach((prop: any) => {
-            const propName = prop.name || prop.title || "Untitled";
-            switch (prop.type) {
-              case "text":
-              case "title":
-                notionProperties[propName] = { title: {} };
-                break;
-              case "number":
-                notionProperties[propName] = { number: { format: "number" } };
-                break;
-              case "select":
-                notionProperties[propName] = { 
-                  select: { 
-                    options: (prop.options || []).map((opt: any) => ({
-                      name: opt.name || opt,
-                      color: opt.color || "default"
-                    }))
-                  }
-                };
-                break;
-              case "multiselect":
-              case "multi_select":
-                notionProperties[propName] = { 
-                  multi_select: { 
-                    options: (prop.options || []).map((opt: any) => ({
-                      name: opt.name || opt,
-                      color: opt.color || "default"
-                    }))
-                  }
-                };
-                break;
-              case "date":
-                notionProperties[propName] = { date: {} };
-                break;
-              case "checkbox":
-                notionProperties[propName] = { checkbox: {} };
-                break;
-              case "url":
-                notionProperties[propName] = { url: {} };
-                break;
-              case "email":
-                notionProperties[propName] = { email: {} };
-                break;
-              case "phone":
-                notionProperties[propName] = { phone_number: {} };
-                break;
-              case "formula":
-                notionProperties[propName] = { 
-                  formula: { expression: prop.formula || "1" }
-                };
-                break;
-              case "relation":
-                // Skip relations for now as they require target database
-                break;
-              default:
-                notionProperties[propName] = { rich_text: {} };
-            }
-          });
-        }
-
-        // Ensure at least one property exists (Notion requirement)
-        if (Object.keys(notionProperties).length === 0) {
-          notionProperties["Name"] = { title: {} };
-        }
-
-        return await notion.databases.create({
-          parent: {
-            type: "page_id",
-            page_id: parentPage.id
-          },
-          title: [
-            {
-              type: "text",
-              text: {
-                content: db.title || db.name || "Database"
+      // Create databases sequentially to avoid Notion API conflicts
+      for (const db of workspaceData.databases) {
+        try {
+          // Transform properties to Notion format
+          const notionProperties: any = {};
+          
+          if (db.properties && Array.isArray(db.properties)) {
+            db.properties.forEach((prop: any) => {
+              const propName = prop.name || prop.title || "Untitled";
+              switch (prop.type) {
+                case "text":
+                case "title":
+                  notionProperties[propName] = { title: {} };
+                  break;
+                case "number":
+                  notionProperties[propName] = { number: { format: "number" } };
+                  break;
+                case "select":
+                  notionProperties[propName] = { 
+                    select: { 
+                      options: (prop.options || []).map((opt: any) => ({
+                        name: opt.name || opt,
+                        color: opt.color || "default"
+                      }))
+                    }
+                  };
+                  break;
+                case "multiselect":
+                case "multi_select":
+                  notionProperties[propName] = { 
+                    multi_select: { 
+                      options: (prop.options || []).map((opt: any) => ({
+                        name: opt.name || opt,
+                        color: opt.color || "default"
+                      }))
+                    }
+                  };
+                  break;
+                case "date":
+                  notionProperties[propName] = { date: {} };
+                  break;
+                case "checkbox":
+                  notionProperties[propName] = { checkbox: {} };
+                  break;
+                case "url":
+                  notionProperties[propName] = { url: {} };
+                  break;
+                case "email":
+                  notionProperties[propName] = { email: {} };
+                  break;
+                case "phone":
+                  notionProperties[propName] = { phone_number: {} };
+                  break;
+                case "formula":
+                  notionProperties[propName] = { 
+                    formula: { expression: prop.formula || "1" }
+                  };
+                  break;
+                case "relation":
+                  // Skip relations for now as they require target database
+                  break;
+                default:
+                  notionProperties[propName] = { rich_text: {} };
               }
-            }
-          ],
-          properties: notionProperties
-        });
-      });
+            });
+          }
 
-      await Promise.all(databasePromises);
+          // Ensure at least one property exists (Notion requirement)
+          if (Object.keys(notionProperties).length === 0) {
+            notionProperties["Name"] = { title: {} };
+          }
+
+          await notion.databases.create({
+            parent: {
+              type: "page_id",
+              page_id: parentPage.id
+            },
+            title: [
+              {
+                type: "text",
+                text: {
+                  content: db.title || db.name || "Database"
+                }
+              }
+            ],
+            properties: notionProperties
+          });
+
+          // Small delay to prevent rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (dbError) {
+          console.error(`Error creating database "${db.title || db.name}":`, dbError);
+          // Continue with other databases even if one fails
+        }
+      }
     }
 
     return parentPage.url;
