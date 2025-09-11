@@ -136,10 +136,10 @@ export default function Templates() {
 
   // Combine database templates with featured templates if database is empty
   const allTemplates = templates && templates.length > 0 
-    ? templates.map(t => ({ ...t, tags: t.tags || [] }))
+    ? templates.map(t => ({ ...t, tags: t.tags || [], usageCount: t.usageCount || 0 }))
     : [
         ...featuredTemplates,
-        ...(templates || []).map(t => ({ ...t, tags: t.tags || [] }))
+        ...(templates || []).map(t => ({ ...t, tags: t.tags || [], usageCount: t.usageCount || 0 }))
       ];
 
   const filteredTemplates = allTemplates.filter(template => {

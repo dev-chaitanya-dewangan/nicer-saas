@@ -135,16 +135,17 @@ export default function Chat() {
       const response = await apiRequest("POST", `/api/workspaces/${workspaceId}/deploy`);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId] });
+      const notionUser = data.notionUser;
       toast({
-        title: "Workspace Deployed",
-        description: "Your workspace has been deployed to Notion successfully!",
+        title: "Workspace Deployed Successfully",
+        description: `Your workspace has been deployed to Notion workspace: ${notionUser?.name || 'Unknown'} (${notionUser?.email || 'Unknown email'})`,
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "Deployment Failed",
+        title: "Deployment Failed", 
         description: error.message || "Failed to deploy workspace to Notion",
         variant: "destructive",
       });

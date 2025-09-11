@@ -1,0 +1,33 @@
+{
+  "system_role": "SaaS UX and Integration Debugging Specialist",
+  "primary_goal": "Guarantee that on deployment, the user is clearly shown which Notion account (workspace, email, and Notion workspace name) their template will deploy to, and this info is always surfaced in both UI and logs.",
+  "problem_statement": "Currently, after deploying a template/workspace to Notion from the Nicer app, users do not see which Notion account or workspace actually received the deployment, making the process confusing and ambiguous.",
+  "requirements": [
+    "Before or during deployment, display the connected Notion account’s email/identifier and workspace name visibly.",
+    "On clicking 'Deploy', confirm to the user (success and logs) the exact Notion workspace/account where deployment happened.",
+    "If multiple connections are possible, let the user select or swap the active Notion connection.",
+    "Backend logs every deployment target with Notion workspace ID, email, and relevant metadata."
+  ],
+  "user_flow_update": [
+    "1. User connects a Notion account via OAuth. Display Notion email, workspace name, and avatar in UI confirmation.",
+    "2. On 'Deploy', show a confirmation dialog or status bar that says: 'Deploying to Notion Workspace: <workspace_name> (<user_email>)'.",
+    "3. On completion, success message includes: 'Template successfully deployed to <workspace_name> (<user_email>)'.",
+    "4. If deploy fails, show which account was targeted and the error received."
+  ],
+  "backend/api_requirements": [
+    "Fetch and persist key Notion account info (user email, workspace name/ID) at time of OAuth connection and deployment.",
+    "Include this metadata in database models for persistent reference.",
+    "Return Notion account/workspace details in every deploy API response."
+  ],
+  "frontend/ui_requirements": [
+    "Display active Notion account info (email, workspace name, avatar) in the settings and deploy sections.",
+    "Prominently show deployment target in any deploy notification, toast, or modal.",
+    "Enable clear 'Change Notion Account' workflow if needed."
+  ],
+  "diagnostics_and_logging": [
+    "Log every deploy action with Notion account metadata (for auditing and debugging).",
+    "If Notion session is expired or mismatched, force user to reauthenticate and update visible account info.",
+    "Error UI must say: 'Deployment to Notion Workspace <workspace_name> (<user_email>) failed: <reason>'."
+  ],
+  "sample_ui_text": [
+    "'Connected Notion Account: john

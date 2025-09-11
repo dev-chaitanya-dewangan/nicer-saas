@@ -17,8 +17,23 @@ const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SEC
   apiVersion: "2025-08-27.basil",
 }) : null;
 
+// Get Notion user information
+async function getNotionUserInfo(notion: any) {
+  try {
+    const user = await notion.users.me();
+    return {
+      email: user.person?.email || user.bot?.owner?.user?.person?.email || "Unknown",
+      name: user.name || "Unknown User",
+      id: user.id
+    };
+  } catch (error) {
+    console.error("Error getting Notion user info:", error);
+    return { email: "Unknown", name: "Unknown User", id: "unknown" };
+  }
+}
+
 // Notion workspace deployment function
-async function deployWorkspaceToNotion(notion: any, workspaceData: any): Promise<string> {
+async function deployWorkspaceToNotion(notion: any, workspaceData: any, userInfo?: any): Promise<{ url: string; notionUser: any }> {
   try {
     // Create a main workspace page
     const parentPage = await notion.pages.create({
@@ -168,7 +183,11 @@ async function deployWorkspaceToNotion(notion: any, workspaceData: any): Promise
       }
     }
 
-    return parentPage.url;
+    // Get Notion user information
+    const notionUser = userInfo || await getNotionUserInfo(notion);
+    console.log(`Workspace deployed to Notion account: ${notionUser.email} (${notionUser.name})`);
+    
+    return { url: parentPage.url, notionUser };
   } catch (error) {
     console.error("Error deploying to Notion:", error);
     throw new Error(`Failed to deploy workspace to Notion: ${error instanceof Error ? error.message : String(error)}`);
@@ -337,14 +356,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid workspace data format" });
       }
       
-      const notionUrl = await deployWorkspaceToNotion(notion, workspaceData);
+      // Get Notion user info first for logging and response
+      const notionUser = await getNotionUserInfo(notion);
+      console.log(`Deploying workspace "${workspaceData.title || 'Untitled'}" to Notion account: ${notionUser.email} (${notionUser.name})`);
+      
+      const deployResult = await deployWorkspaceToNotion(notion, workspaceData, notionUser);
       
       const updatedWorkspace = await storage.updateWorkspace(workspace.id, {
         status: "deployed",
-        notionPageId: notionUrl // Store the Notion page URL
+        notionPageId: deployResult.url // Store the Notion page URL
       });
 
-      res.json(updatedWorkspace);
+      // Include Notion user info in response for frontend display
+      res.json({ ...updatedWorkspace, notionUser: deployResult.notionUser });
     } catch (error) {
       console.error("Error deploying workspace:", error);
       res.status(500).json({ message: "Failed to deploy workspace to Notion" });
