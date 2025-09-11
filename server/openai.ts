@@ -43,8 +43,79 @@ export interface NotionRelation {
 
 export interface NotionPage {
   title: string;
-  content: string;
+  content: string | object | any[];
   type: string;
+}
+
+// Notion API validation utilities
+function validateNotionProperty(property: NotionProperty): { valid: boolean; error?: string } {
+  const validTypes = ['title', 'rich_text', 'number', 'select', 'multi_select', 'date', 'people', 'files', 'checkbox', 'url', 'email', 'phone_number', 'formula', 'rollup', 'relation', 'created_time', 'created_by', 'last_edited_time', 'last_edited_by', 'status'];
+  
+  if (!validTypes.includes(property.type)) {
+    return { valid: false, error: `Invalid property type: ${property.type}` };
+  }
+  
+  if (property.name.length > 2000) {
+    return { valid: false, error: `Property name too long: ${property.name}` };
+  }
+  
+  return { valid: true };
+}
+
+function validateNotionDatabase(database: NotionDatabase): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (database.properties.length > 100) {
+    errors.push(`Database "${database.name}" has too many properties (${database.properties.length}). Notion limits to 100.`);
+  }
+  
+  database.properties.forEach((prop, index) => {
+    const validation = validateNotionProperty(prop);
+    if (!validation.valid) {
+      errors.push(`Property ${index + 1} in "${database.name}": ${validation.error}`);
+    }
+  });
+  
+  if (database.name.length > 2000) {
+    errors.push(`Database name too long: ${database.name}`);
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
+
+export function validateWorkspaceSpec(spec: NotionWorkspaceSpec): { valid: boolean; errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  
+  // Validate databases
+  spec.databases?.forEach((database, index) => {
+    const validation = validateNotionDatabase(database);
+    if (!validation.valid) {
+      errors.push(...validation.errors);
+    }
+    
+    // Check for title property
+    const hasTitle = database.properties.some(prop => prop.type === 'title');
+    if (!hasTitle) {
+      errors.push(`Database "${database.name}" missing required title property`);
+    }
+    
+    // Warn about complex formulas
+    database.properties.forEach(prop => {
+      if (prop.type === 'formula' && prop.config?.expression && prop.config.expression.length > 2000) {
+        warnings.push(`Formula in "${database.name}.${prop.name}" may be too complex`);
+      }
+    });
+  });
+  
+  // Validate pages
+  spec.pages?.forEach((page, index) => {
+    if (page.title.length > 2000) {
+      errors.push(`Page "${page.title}" title too long`);
+    }
+  });
+  
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 export async function generateNotionWorkspace(

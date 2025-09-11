@@ -245,13 +245,13 @@ export function WorkspacePreview({ workspace }: WorkspacePreviewProps) {
                             
                             // Handle case where content is an object with text/type structure
                             let contentString = '';
-                            if (typeof page.content === 'object') {
+                            if (typeof page.content === 'object' && page.content !== null) {
                               if (Array.isArray(page.content)) {
-                                contentString = page.content
-                                  .map(block => typeof block === 'object' && block.text ? block.text : String(block))
+                                contentString = (page.content as any[])
+                                  .map((block: any) => typeof block === 'object' && block?.text ? block.text : String(block))
                                   .join(' ');
-                              } else if (page.content.text) {
-                                contentString = page.content.text;
+                              } else if ((page.content as any)?.text) {
+                                contentString = (page.content as any).text;
                               } else {
                                 contentString = JSON.stringify(page.content);
                               }

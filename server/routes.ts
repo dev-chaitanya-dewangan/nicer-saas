@@ -4,7 +4,7 @@ import Stripe from "stripe";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { getUncachableNotionClient } from "./notionClient";
-import { generateNotionWorkspace, refineWorkspaceSpec, generateChatResponse } from "./openai";
+import { generateNotionWorkspace, refineWorkspaceSpec, generateChatResponse, validateWorkspaceSpec } from "./openai";
 import { insertWorkspaceSchema, insertConversationSchema } from "@shared/schema";
 import { z } from "zod";
 
@@ -354,6 +354,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.error("Error parsing workspace data:", error);
         return res.status(400).json({ message: "Invalid workspace data format" });
+      }
+
+      // Validate workspace specification against Notion API requirements
+      const validation = validateWorkspaceSpec(workspaceData);
+      if (!validation.valid) {
+        console.error("Workspace validation failed:", validation.errors);
+        return res.status(400).json({ 
+          message: "Workspace specification is incompatible with Notion API",
+          errors: validation.errors,
+          warnings: validation.warnings
+        });
+      }
+      
+      // Log validation warnings if any
+      if (validation.warnings.length > 0) {
+        console.warn("Workspace validation warnings:", validation.warnings);
       }
       
       // Get Notion user info first for logging and response

@@ -143,10 +143,17 @@ export default function Chat() {
         description: `Your workspace has been deployed to Notion workspace: ${notionUser?.name || 'Unknown'} (${notionUser?.email || 'Unknown email'})`,
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      let errorMessage = error.message || "Failed to deploy workspace to Notion";
+      
+      // Handle validation errors with detailed feedback
+      if (error.errors && Array.isArray(error.errors)) {
+        errorMessage = `Notion API Validation Failed:\n${error.errors.slice(0, 3).join('\n')}${error.errors.length > 3 ? '\n...and more' : ''}`;
+      }
+      
       toast({
         title: "Deployment Failed", 
-        description: error.message || "Failed to deploy workspace to Notion",
+        description: errorMessage,
         variant: "destructive",
       });
     },
