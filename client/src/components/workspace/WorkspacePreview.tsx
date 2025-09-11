@@ -240,9 +240,9 @@ export function WorkspacePreview({ workspace }: WorkspacePreviewProps) {
                       <div>
                         <h5 className="font-medium text-sm">{page.title}</h5>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {page.content.length > 100 
-                            ? `${page.content.substring(0, 100)}...` 
-                            : page.content
+                          {(page.content || '').length > 100 
+                            ? `${(page.content || '').substring(0, 100)}...` 
+                            : page.content || 'No content'
                           }
                         </p>
                       </div>

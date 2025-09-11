@@ -164,7 +164,7 @@ async function deployWorkspaceToNotion(notion: any, workspaceData: any): Promise
     return parentPage.url;
   } catch (error) {
     console.error("Error deploying to Notion:", error);
-    throw new Error(`Failed to deploy workspace to Notion: ${error.message}`);
+    throw new Error(`Failed to deploy workspace to Notion: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -251,7 +251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const aiResponse = await generateNotionWorkspace(
           validatedData.prompt,
-          validatedData.theme
+          validatedData.theme || "professional"
         );
 
         const updatedWorkspace = await storage.updateWorkspace(workspace.id, {
@@ -320,7 +320,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notion = await getUncachableNotionClient();
       
       // Parse the AI-generated workspace data and deploy to Notion
-      const workspaceData = JSON.parse(workspace.aiResponse);
+      let workspaceData;
+      try {
+        workspaceData = typeof workspace.aiResponse === 'string' 
+          ? JSON.parse(workspace.aiResponse)
+          : workspace.aiResponse;
+      } catch (error) {
+        console.error("Error parsing workspace data:", error);
+        return res.status(400).json({ message: "Invalid workspace data format" });
+      }
+      
       const notionUrl = await deployWorkspaceToNotion(notion, workspaceData);
       
       const updatedWorkspace = await storage.updateWorkspace(workspace.id, {
