@@ -17,6 +17,182 @@ const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SEC
   apiVersion: "2025-08-27.basil",
 }) : null;
 
+// Notion workspace deployment function
+async function deployWorkspaceToNotion(notion: any, workspaceData: any): Promise<string> {
+  try {
+    // Create a main workspace page
+    const parentPage = await notion.pages.create({
+      parent: {
+        type: "page_id",
+        page_id: process.env.NOTION_PAGE_ID || await getUserNotionPageId(notion)
+      },
+      properties: {
+        title: {
+          title: [
+            {
+              text: {
+                content: workspaceData.title || "Generated Workspace"
+              }
+            }
+          ]
+        }
+      },
+      children: [
+        {
+          object: "block",
+          type: "heading_1",
+          heading_1: {
+            rich_text: [
+              {
+                type: "text",
+                text: {
+                  content: workspaceData.title || "Generated Workspace"
+                }
+              }
+            ]
+          }
+        },
+        {
+          object: "block",
+          type: "paragraph",
+          paragraph: {
+            rich_text: [
+              {
+                type: "text",
+                text: {
+                  content: workspaceData.description || "AI-generated workspace created with Nicer SaaS"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    });
+
+    // Create databases from the workspace data
+    if (workspaceData.databases && Array.isArray(workspaceData.databases)) {
+      const databasePromises = workspaceData.databases.map(async (db: any) => {
+        // Transform properties to Notion format
+        const notionProperties: any = {};
+        
+        if (db.properties && Array.isArray(db.properties)) {
+          db.properties.forEach((prop: any) => {
+            const propName = prop.name || prop.title || "Untitled";
+            switch (prop.type) {
+              case "text":
+              case "title":
+                notionProperties[propName] = { title: {} };
+                break;
+              case "number":
+                notionProperties[propName] = { number: { format: "number" } };
+                break;
+              case "select":
+                notionProperties[propName] = { 
+                  select: { 
+                    options: (prop.options || []).map((opt: any) => ({
+                      name: opt.name || opt,
+                      color: opt.color || "default"
+                    }))
+                  }
+                };
+                break;
+              case "multiselect":
+              case "multi_select":
+                notionProperties[propName] = { 
+                  multi_select: { 
+                    options: (prop.options || []).map((opt: any) => ({
+                      name: opt.name || opt,
+                      color: opt.color || "default"
+                    }))
+                  }
+                };
+                break;
+              case "date":
+                notionProperties[propName] = { date: {} };
+                break;
+              case "checkbox":
+                notionProperties[propName] = { checkbox: {} };
+                break;
+              case "url":
+                notionProperties[propName] = { url: {} };
+                break;
+              case "email":
+                notionProperties[propName] = { email: {} };
+                break;
+              case "phone":
+                notionProperties[propName] = { phone_number: {} };
+                break;
+              case "formula":
+                notionProperties[propName] = { 
+                  formula: { expression: prop.formula || "1" }
+                };
+                break;
+              case "relation":
+                // Skip relations for now as they require target database
+                break;
+              default:
+                notionProperties[propName] = { rich_text: {} };
+            }
+          });
+        }
+
+        // Ensure at least one property exists (Notion requirement)
+        if (Object.keys(notionProperties).length === 0) {
+          notionProperties["Name"] = { title: {} };
+        }
+
+        return await notion.databases.create({
+          parent: {
+            type: "page_id",
+            page_id: parentPage.id
+          },
+          title: [
+            {
+              type: "text",
+              text: {
+                content: db.title || db.name || "Database"
+              }
+            }
+          ],
+          properties: notionProperties
+        });
+      });
+
+      await Promise.all(databasePromises);
+    }
+
+    return parentPage.url;
+  } catch (error) {
+    console.error("Error deploying to Notion:", error);
+    throw new Error(`Failed to deploy workspace to Notion: ${error.message}`);
+  }
+}
+
+// Helper function to get user's default Notion page ID
+async function getUserNotionPageId(notion: any): Promise<string> {
+  try {
+    const response = await notion.search({
+      filter: {
+        value: "page",
+        property: "object"
+      },
+      sort: {
+        direction: "descending",
+        timestamp: "last_edited_time"
+      },
+      page_size: 1
+    });
+    
+    if (response.results && response.results.length > 0) {
+      return response.results[0].id;
+    }
+    
+    throw new Error("No accessible pages found in Notion workspace");
+  } catch (error) {
+    throw new Error("Could not find a suitable parent page in Notion");
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
@@ -143,13 +319,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const notion = await getUncachableNotionClient();
       
-      // TODO: Implement Notion workspace deployment
-      // This would involve creating databases, pages, and properties in Notion
-      // For now, we'll simulate the deployment
+      // Parse the AI-generated workspace data and deploy to Notion
+      const workspaceData = JSON.parse(workspace.aiResponse);
+      const notionUrl = await deployWorkspaceToNotion(notion, workspaceData);
       
       const updatedWorkspace = await storage.updateWorkspace(workspace.id, {
         status: "deployed",
-        notionPageId: "simulated-page-id" // Replace with actual Notion page ID
+        notionPageId: notionUrl // Store the Notion page URL
       });
 
       res.json(updatedWorkspace);
