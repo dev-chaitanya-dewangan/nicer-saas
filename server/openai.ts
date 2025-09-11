@@ -1,9 +1,7 @@
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
-// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "default_key"
-});
+// Using Gemini AI for workspace generation with free API key
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export interface NotionWorkspaceSpec {
   title: string;
@@ -79,23 +77,16 @@ THEMES:
 
 Respond with valid JSON matching the NotionWorkspaceSpec interface.`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-5",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 4000,
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+      },
+      contents: prompt,
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const result = JSON.parse(response.text || "{}");
     return result as NotionWorkspaceSpec;
   } catch (error) {
     console.error("Error generating workspace:", error);
@@ -115,23 +106,16 @@ ${JSON.stringify(currentSpec, null, 2)}
 
 Apply the following refinements and return the updated specification as valid JSON:`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-5",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-        {
-          role: "user",
-          content: refinementPrompt,
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 4000,
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+      },
+      contents: refinementPrompt,
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const result = JSON.parse(response.text || "{}");
     return result as NotionWorkspaceSpec;
   } catch (error) {
     console.error("Error refining workspace:", error);
@@ -155,16 +139,15 @@ Your role:
 
 Keep responses concise but informative. Focus on understanding the user's needs and helping them create the best possible workspace.`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-5",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
-      max_tokens: 500,
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      config: {
+        systemInstruction: systemPrompt,
+      },
+      contents: messages.map(msg => `${msg.role}: ${msg.content}`).join('\n'),
     });
 
-    return response.choices[0].message.content || "";
+    return response.text || "";
   } catch (error) {
     console.error("Error generating chat response:", error);
     throw new Error("Failed to generate chat response");
