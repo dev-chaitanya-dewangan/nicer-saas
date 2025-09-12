@@ -1,10 +1,31 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
-  if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+  if (res.ok) return;
+
+  // Attempt to parse JSON error payload for richer error information
+  const contentType = res.headers.get("content-type") || "";
+  let payload: any = null;
+  let rawText = "";
+  try {
+    rawText = await res.text();
+    if (contentType.includes("application/json")) {
+      payload = JSON.parse(rawText);
+    }
+  } catch (_) {
+    /* ignore JSON parse errors */
   }
+
+  // Construct an error object that preserves useful details
+  const error: any = new Error(payload?.message || rawText || res.statusText);
+  error.status = res.status;
+  if (payload && typeof payload === "object") {
+    Object.assign(error, payload);
+  } else {
+    error.raw = rawText;
+  }
+
+  throw error;
 }
 
 export async function apiRequest(

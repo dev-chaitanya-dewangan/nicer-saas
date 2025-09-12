@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { apiRequest } from "@/lib/queryClient";
 import { 
   Plus, 
   MessageSquare, 
@@ -18,13 +19,15 @@ import {
   Users,
   Database,
   Layout,
-  Clock
+  Clock,
+  Loader2
 } from "lucide-react";
 import type { Workspace, User } from "@shared/schema";
 
 export default function Dashboard() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -41,6 +44,12 @@ export default function Dashboard() {
 
   const { data: user, isLoading: userLoading } = useQuery<User>({
     queryKey: ["/api/auth/user"],
+    enabled: isAuthenticated,
+    retry: false,
+  });
+
+  const { data: notionUser, isLoading: notionLoading } = useQuery({
+    queryKey: ["/api/notion/user"],
     enabled: isAuthenticated,
     retry: false,
   });
@@ -62,6 +71,43 @@ export default function Dashboard() {
       }
     },
   });
+
+  const deployWorkspaceMutation = useMutation({
+    mutationFn: async (workspaceId: string) => {
+      const response = await apiRequest("POST", `/api/workspaces/${workspaceId}/deploy`);
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+      const notionUser = data.notionUser;
+      toast({
+        title: "Workspace Deployed Successfully",
+        description: `Your workspace has been deployed to Notion workspace: ${notionUser?.name || 'Unknown'} (${notionUser?.email || 'Unknown email'})`,
+      });
+    },
+    onError: (error: any) => {
+      let errorMessage = error.message || "Failed to deploy workspace to Notion";
+      
+      // Handle validation errors with detailed feedback
+      if (error.errors && Array.isArray(error.errors)) {
+        errorMessage = `Notion API Validation Failed:\n${error.errors.slice(0, 3).join('\n')}${error.errors.length > 3 ? '\n...and more' : ''}`;
+      } else if (error.error) {
+        // Use detailed error from server
+        errorMessage = `${error.error}\n\n${error.suggestion || ''}`;
+      }
+      
+      toast({
+        title: "Deployment Failed", 
+        description: errorMessage,
+        variant: "destructive",
+        duration: 10000,
+      });
+    },
+  });
+
+  const handleDeployWorkspace = (workspaceId: string) => {
+    deployWorkspaceMutation.mutate(workspaceId);
+  };
 
   if (authLoading || userLoading) {
     return (
@@ -106,7 +152,7 @@ export default function Dashboard() {
         </div>
 
         {/* Usage Stats */}
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <div className="grid md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -125,6 +171,42 @@ export default function Dashboard() {
                   <Badge variant={isAtLimit ? "destructive" : "secondary"}>
                     {isAtLimit ? "Limit Reached" : "Near Limit"}
                   </Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Notion Account</p>
+                  <p className="text-2xl font-bold">
+                    {notionLoading ? "..." : notionUser?.name ? "Connected" : "Not Connected"}
+                  </p>
+                </div>
+                <div className={`p-2 rounded-lg ${notionUser?.name ? 'bg-green-500/10' : 'bg-orange-500/10'}`}>
+                  {notionUser?.name ? (
+                    <ExternalLink className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <ExternalLink className="w-5 h-5 text-orange-500" />
+                  )}
+                </div>
+              </div>
+              {notionUser?.name && (
+                <div className="mt-2">
+                  <Badge variant="default" className="text-xs">
+                    {notionUser.name}
+                  </Badge>
+                </div>
+              )}
+              {!notionUser?.name && !notionLoading && (
+                <div className="mt-2">
+                  <Link href="https://www.notion.so/my-integrations" target="_blank">
+                    <Button size="sm" variant="outline" className="text-xs">
+                      Connect
+                    </Button>
+                  </Link>
                 </div>
               )}
             </CardContent>
@@ -265,8 +347,17 @@ export default function Dashboard() {
                           </Button>
                         </Link>
                         {workspace.status === 'completed' && (
-                          <Button size="sm" data-testid={`button-deploy-${workspace.id}`}>
-                            <ExternalLink className="w-4 h-4 mr-2" />
+                          <Button 
+                            size="sm" 
+                            onClick={() => handleDeployWorkspace(workspace.id)}
+                            disabled={deployWorkspaceMutation.isPending}
+                            data-testid={`button-deploy-${workspace.id}`}
+                          >
+                            {deployWorkspaceMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <ExternalLink className="w-4 h-4 mr-2" />
+                            )}
                             Deploy
                           </Button>
                         )}

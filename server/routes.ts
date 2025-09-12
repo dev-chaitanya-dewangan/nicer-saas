@@ -1,21 +1,23 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import Stripe from "stripe";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
-import { getUncachableNotionClient } from "./notionClient";
-import { generateNotionWorkspace, refineWorkspaceSpec, generateChatResponse, validateWorkspaceSpec } from "./openai";
-import { insertWorkspaceSchema, insertConversationSchema } from "@shared/schema";
-import { z } from "zod";
 
-// Initialize Stripe
-if (!process.env.STRIPE_SECRET_KEY) {
-  console.warn('STRIPE_SECRET_KEY not provided - payment features will be disabled');
+// Use local auth for development, Replit auth for production
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Dynamically import the appropriate auth module
+let authModulePromise: Promise<any>;
+
+if (isDevelopment) {
+  authModulePromise = import("./localAuth");
+} else {
+  authModulePromise = import("./replitAuth");
 }
 
-const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2025-08-27.basil",
-}) : null;
+import { getUncachableNotionClient } from "./notionClient";
+import { generateNotionWorkspace, refineWorkspaceSpec, generateChatResponse, validateWorkspaceSpec } from "./openai";
+import { insertWorkspaceSchema, insertConversationSchema } from "@shared/schema-sqlite";
+import { z } from "zod";
 
 // Get Notion user information
 async function getNotionUserInfo(notion: any) {
@@ -221,10 +223,15 @@ async function getUserNotionPageId(notion: any): Promise<string> {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
+  const authModule = await authModulePromise;
+  const { setupAuth, isAuthenticated } = authModule;
   await setupAuth(app);
 
+  // Make isAuthenticated available to all routes
+  (app as any).isAuthenticated = isAuthenticated;
+
   // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.get('/api/auth/user', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
@@ -236,7 +243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Workspace routes
-  app.get('/api/workspaces', isAuthenticated, async (req: any, res) => {
+  app.get('/api/workspaces', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const workspaces = await storage.getUserWorkspaces(userId);
@@ -247,7 +254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/workspaces', isAuthenticated, async (req: any, res) => {
+  app.post('/api/workspaces', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
@@ -306,7 +313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/workspaces/:id', isAuthenticated, async (req: any, res) => {
+  app.get('/api/workspaces/:id', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const workspace = await storage.getWorkspace(req.params.id);
@@ -326,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/workspaces/:id/deploy', isAuthenticated, async (req: any, res) => {
+  app.post('/api/workspaces/:id/deploy', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const workspace = await storage.getWorkspace(req.params.id);
@@ -387,11 +394,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ...updatedWorkspace, notionUser: deployResult.notionUser });
     } catch (error) {
       console.error("Error deploying workspace:", error);
-      res.status(500).json({ message: "Failed to deploy workspace to Notion" });
+      
+      // Provide detailed error information for debugging
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isAuthError = errorMessage.includes('X_REPLIT_TOKEN') || errorMessage.includes('Notion not connected');
+      
+      res.status(500).json({ 
+        message: "Failed to deploy workspace to Notion",
+        error: errorMessage,
+        suggestion: isAuthError 
+          ? "Please check your Notion integration settings. For local development, ensure NOTION_ACCESS_TOKEN is set in your environment variables."
+          : "Please check the workspace specification for compatibility issues with Notion API.",
+        docs: isAuthError 
+          ? "https://developers.notion.com/docs/authorization"
+          : "https://developers.notion.com/reference/property-value-object"
+      });
     }
   });
 
-  app.post('/api/workspaces/:id/refine', isAuthenticated, async (req: any, res) => {
+  app.post('/api/workspaces/:id/refine', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { refinementPrompt } = req.body;
@@ -437,12 +458,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: "Complete customer relationship management with lead tracking, deal pipeline, and revenue analytics.",
             category: "business",
             prompt: "Create a comprehensive SaaS CRM system with lead tracking, deal pipeline management, revenue analytics, churn rate calculations, and customer communication logs.",
-            tags: ["Leads Database", "Deal Pipeline", "Analytics"],
-            preview: {
+            tags: JSON.stringify(["Leads Database", "Deal Pipeline", "Analytics"]),
+            preview: JSON.stringify({
               databases: 3,
               properties: 25,
               views: 8
-            },
+            }),
             isPublic: true,
             usageCount: 0
           },
@@ -451,12 +472,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: "Task boards, timelines, resource allocation, and team coordination in one workspace.",
             category: "productivity",
             prompt: "Build a project management workspace with task boards, timeline views, resource allocation, team coordination, milestone tracking, and progress reporting.",
-            tags: ["Kanban Boards", "Timeline", "Resources"],
-            preview: {
+            tags: JSON.stringify(["Kanban Boards", "Timeline", "Resources"]),
+            preview: JSON.stringify({
               databases: 4,
               properties: 20,
               views: 6
-            },
+            }),
             isPublic: true,
             usageCount: 0
           },
@@ -465,12 +486,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: "Multi-platform content planning with collaboration tools and performance analytics.",
             category: "marketing",
             prompt: "Create a content calendar workspace for multi-platform content planning, collaboration tools, publishing schedules, performance analytics, and content ideation.",
-            tags: ["Multi-Platform", "Collaboration", "Analytics"],
-            preview: {
+            tags: JSON.stringify(["Multi-Platform", "Collaboration", "Analytics"]),
+            preview: JSON.stringify({
               databases: 3,
               properties: 18,
               views: 5
-            },
+            }),
             isPublic: true,
             usageCount: 0
           },
@@ -479,12 +500,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: "Habit tracking, goal management, and personal productivity system for life organization.",
             category: "personal",
             prompt: "Design a personal life organization system with habit tracking, goal management, daily journaling, mood tracking, and personal productivity metrics.",
-            tags: ["Habit Tracker", "Goals", "Journal"],
-            preview: {
+            tags: JSON.stringify(["Habit Tracker", "Goals", "Journal"]),
+            preview: JSON.stringify({
               databases: 4,
               properties: 22,
               views: 7
-            },
+            }),
             isPublic: true,
             usageCount: 0
           },
@@ -493,12 +514,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: "Product catalog, order management, inventory tracking, and customer support system.",
             category: "business",
             prompt: "Build an e-commerce operations workspace with product catalog, order management, inventory tracking, customer support tickets, and sales analytics.",
-            tags: ["Products", "Orders", "Inventory"],
-            preview: {
+            tags: JSON.stringify(["Products", "Orders", "Inventory"]),
+            preview: JSON.stringify({
               databases: 5,
               properties: 30,
               views: 10
-            },
+            }),
             isPublic: true,
             usageCount: 0
           }
@@ -544,7 +565,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/templates/:id/use', isAuthenticated, async (req: any, res) => {
+  app.post('/api/templates/:id/use', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const templateId = req.params.id;
@@ -663,7 +684,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Chat routes
-  app.post('/api/chat', isAuthenticated, async (req: any, res) => {
+  app.post('/api/chat', (app as any).isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { messages, workspaceId } = req.body;
@@ -704,61 +725,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to process chat message" });
     }
   });
-
-  // Stripe subscription routes (only if Stripe is configured)
-  if (stripe) {
-    app.post('/api/create-subscription', isAuthenticated, async (req: any, res) => {
-      try {
-        const userId = req.user.claims.sub;
-        let user = await storage.getUser(userId);
-
-        if (!user) {
-          return res.status(404).json({ message: "User not found" });
-        }
-
-        if (user.stripeSubscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
-          return res.send({
-            subscriptionId: subscription.id,
-            clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
-          });
-        }
-        
-        if (!user.email) {
-          return res.status(400).json({ message: 'No user email on file' });
-        }
-
-        const customer = await stripe.customers.create({
-          email: user.email,
-          name: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email,
-        });
-
-        const subscription = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{
-            price: process.env.STRIPE_PRICE_ID || 'price_default', // User needs to set this
-          }],
-          payment_behavior: 'default_incomplete',
-          expand: ['latest_invoice.payment_intent'],
-        });
-
-        await storage.updateUserStripeInfo(userId, customer.id, subscription.id);
-    
-        res.send({
-          subscriptionId: subscription.id,
-          clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
-        });
-      } catch (error: any) {
-        console.error("Stripe subscription error:", error);
-        return res.status(400).send({ error: { message: error.message } });
-      }
-    });
-  } else {
-    // Placeholder route if Stripe not configured
-    app.post('/api/create-subscription', (req, res) => {
-      res.status(503).json({ message: "Payment processing not configured. Please set STRIPE_SECRET_KEY." });
-    });
-  }
 
   const httpServer = createServer(app);
   return httpServer;

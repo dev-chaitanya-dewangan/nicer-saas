@@ -149,12 +149,16 @@ export default function Chat() {
       // Handle validation errors with detailed feedback
       if (error.errors && Array.isArray(error.errors)) {
         errorMessage = `Notion API Validation Failed:\n${error.errors.slice(0, 3).join('\n')}${error.errors.length > 3 ? '\n...and more' : ''}`;
+      } else if (error.error) {
+        // Use detailed error from server
+        errorMessage = `${error.error}\n\n${error.suggestion || ''}`;
       }
       
       toast({
         title: "Deployment Failed", 
         description: errorMessage,
         variant: "destructive",
+        duration: 10000, // Give users time to read detailed messages
       });
     },
   });

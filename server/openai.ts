@@ -64,57 +64,63 @@ function validateNotionProperty(property: NotionProperty): { valid: boolean; err
 
 function validateNotionDatabase(database: NotionDatabase): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
-  if (database.properties.length > 100) {
-    errors.push(`Database "${database.name}" has too many properties (${database.properties.length}). Notion limits to 100.`);
+  // Guard against missing properties array
+  const properties = Array.isArray(database.properties) ? database.properties : [];
+
+  if (properties.length > 100) {
+    errors.push(`Database "${database.name}" has too many properties (${properties.length}). Notion limits to 100.`);
   }
-  
-  database.properties.forEach((prop, index) => {
+
+  properties.forEach((prop, index) => {
     const validation = validateNotionProperty(prop);
     if (!validation.valid) {
       errors.push(`Property ${index + 1} in "${database.name}": ${validation.error}`);
     }
   });
-  
-  if (database.name.length > 2000) {
+
+  if ((database.name || '').length > 2000) {
     errors.push(`Database name too long: ${database.name}`);
   }
-  
+
   return { valid: errors.length === 0, errors };
 }
 
 export function validateWorkspaceSpec(spec: NotionWorkspaceSpec): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   // Validate databases
-  spec.databases?.forEach((database, index) => {
+  spec.databases?.forEach((database) => {
     const validation = validateNotionDatabase(database);
     if (!validation.valid) {
       errors.push(...validation.errors);
     }
-    
+
+    const properties = Array.isArray(database.properties) ? database.properties : [];
     // Check for title property
-    const hasTitle = database.properties.some(prop => prop.type === 'title');
+    const hasTitle = properties.some(prop => prop.type === 'title');
     if (!hasTitle) {
       errors.push(`Database "${database.name}" missing required title property`);
     }
-    
+
     // Warn about complex formulas
-    database.properties.forEach(prop => {
+    properties.forEach(prop => {
       if (prop.type === 'formula' && prop.config?.expression && prop.config.expression.length > 2000) {
         warnings.push(`Formula in "${database.name}.${prop.name}" may be too complex`);
       }
     });
   });
-  
+
   // Validate pages
-  spec.pages?.forEach((page, index) => {
-    if (page.title.length > 2000) {
-      errors.push(`Page "${page.title}" title too long`);
+  spec.pages?.forEach((page) => {
+    const title = page.title ?? '';
+    if (typeof title !== 'string' || title.length === 0) {
+      errors.push('A page is missing a valid title');
+    } else if (title.length > 2000) {
+      errors.push(`Page "${title}" title too long`);
     }
   });
-  
+
   return { valid: errors.length === 0, errors, warnings };
 }
 

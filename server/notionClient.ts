@@ -3,11 +3,13 @@ import { Client } from '@notionhq/client';
 let connectionSettings: any;
 
 async function getAccessToken() {
-  if (connectionSettings && connectionSettings.settings.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    return connectionSettings.settings.access_token;
+  // Local development fallback - use NOTION_ACCESS_TOKEN from environment
+  if (process.env.NOTION_ACCESS_TOKEN) {
+    return process.env.NOTION_ACCESS_TOKEN;
   }
   
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME
+  // Replit environment authentication
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY 
     ? 'repl ' + process.env.REPL_IDENTITY 
     : process.env.WEB_REPL_RENEWAL 
@@ -15,7 +17,7 @@ async function getAccessToken() {
     : null;
 
   if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+    throw new Error('X_REPLIT_TOKEN not found for repl/depl. For local development, set NOTION_ACCESS_TOKEN environment variable with your Notion integration token.');
   }
 
   connectionSettings = await fetch(

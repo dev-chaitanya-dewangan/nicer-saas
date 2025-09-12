@@ -8,7 +8,6 @@ import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import Chat from "@/pages/chat";
 import Templates from "@/pages/templates";
-import Subscribe from "@/pages/subscribe";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -23,7 +22,6 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/chat/:workspaceId?" component={Chat} />
           <Route path="/templates" component={Templates} />
-          <Route path="/subscribe" component={Subscribe} />
         </>
       )}
       <Route component={NotFound} />

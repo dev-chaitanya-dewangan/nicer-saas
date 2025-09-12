@@ -8,12 +8,16 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
-if (!process.env.REPLIT_DOMAINS) {
-  throw new Error("Environment variable REPLIT_DOMAINS not provided");
-}
+// Only require REPLIT_DOMAINS in production
+const isDevelopment = process.env.NODE_ENV === 'development';
 
 const getOidcConfig = memoize(
   async () => {
+    // Only check for REPLIT_DOMAINS in production
+    if (!isDevelopment && !process.env.REPLIT_DOMAINS) {
+      throw new Error("Environment variable REPLIT_DOMAINS not provided");
+    }
+    
     return await client.discovery(
       new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
       process.env.REPL_ID!
@@ -72,6 +76,60 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // In development mode, use a simple local strategy
+  if (isDevelopment) {
+    // Simple local user for development
+    const localUser = {
+      id: "local-user-id",
+      email: "local@example.com",
+      firstName: "Local",
+      lastName: "User",
+      profileImageUrl: "",
+      claims: {
+        sub: "local-user-id",
+        email: "local@example.com",
+        first_name: "Local",
+        last_name: "User",
+      },
+    };
+
+    // Mock login endpoint for local development
+    app.get("/api/login", (req, res) => {
+      // Set user in session
+      (req as any).session.passport = { user: localUser };
+      (req as any).user = localUser;
+      
+      // Create user in database if not exists
+      storage.upsertUser({
+        id: localUser.id,
+        email: localUser.email,
+        firstName: localUser.firstName,
+        lastName: localUser.lastName,
+        profileImageUrl: localUser.profileImageUrl,
+      }).catch(console.error);
+      
+      res.redirect("/");
+    });
+
+    // Mock logout endpoint
+    app.get("/api/logout", (req, res) => {
+      req.logout(() => {});
+      (req as any).session.destroy(() => {});
+      res.redirect("/");
+    });
+    
+    // Setup passport for local development
+    passport.serializeUser((user: any, cb) => cb(null, user));
+    passport.deserializeUser((user: any, cb) => cb(null, user));
+    
+    return;
+  }
+
+  // In production, use Replit auth
+  if (!process.env.REPLIT_DOMAINS) {
+    throw new Error("Environment variable REPLIT_DOMAINS not provided");
+  }
+
   const config = await getOidcConfig();
 
   const verify: VerifyFunction = async (
@@ -84,8 +142,10 @@ export async function setupAuth(app: Express) {
     verified(null, user);
   };
 
-  for (const domain of process.env
-    .REPLIT_DOMAINS!.split(",")) {
+  // Split domains properly and trim whitespace
+  const domains = process.env.REPLIT_DOMAINS.split(",").map(domain => domain.trim());
+  
+  for (const domain of domains) {
     const strategy = new Strategy(
       {
         name: `replitauth:${domain}`,
@@ -128,6 +188,38 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // In development mode, always authenticate
+  if (isDevelopment) {
+    const localUser = {
+      id: "local-user-id",
+      email: "local@example.com",
+      firstName: "Local",
+      lastName: "User",
+      profileImageUrl: "",
+      claims: {
+        sub: "local-user-id",
+        email: "local@example.com",
+        first_name: "Local",
+        last_name: "User",
+      },
+    };
+    
+    (req as any).user = localUser;
+    (req as any).session = (req as any).session || {};
+    (req as any).session.passport = { user: localUser };
+    
+    // Create user in database if not exists
+    await storage.upsertUser({
+      id: localUser.id,
+      email: localUser.email,
+      firstName: localUser.firstName,
+      lastName: localUser.lastName,
+      profileImageUrl: localUser.profileImageUrl,
+    }).catch(console.error);
+    
+    return next();
+  }
+
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {
