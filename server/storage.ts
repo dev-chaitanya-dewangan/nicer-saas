@@ -3,6 +3,7 @@ import {
   workspaces,
   templates,
   conversations,
+  notionConnections,
   type User,
   type UpsertUser,
   type Workspace,
@@ -11,23 +12,13 @@ import {
   type InsertTemplate,
   type Conversation,
   type InsertConversation,
+  type NotionConnection as SchemaNotionConnection,
 } from "@shared/schema-sqlite";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
 
-// Interface for storage operations
-export interface NotionConnection {
-  userId: string;
-  accessToken: string;
-  workspaceId: string;
-  workspaceName: string;
-  botId: string;
-  ownerEmail: string;
-  ownerName: string;
-  ownerAvatar?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
+// Interface for storage operations - using the schema type
+export type NotionConnection = SchemaNotionConnection;
 
 export interface IStorage {
   // User operations
@@ -80,7 +71,7 @@ export class DatabaseStorage implements IStorage {
       .values(userData)
       .onConflictDoUpdate({
         target: users.id,
-        set: { 
+        set: {
           ...userData,
           updatedAt: new Date(),
         },
@@ -253,20 +244,25 @@ export class DatabaseStorage implements IStorage {
   // Notion connection operations
   async storeNotionConnection(connection: NotionConnection): Promise<void> {
     // @ts-ignore
-    await db.insert(notionConnections).values({
-      ...connection,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).onConflictDoUpdate({
-      target: notionConnections.userId,
-      set: {
+    await db
+      .insert(notionConnections)
+      .values({
         ...connection,
+        createdAt: new Date(),
         updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: notionConnections.userId,
+        set: {
+          ...connection,
+          updatedAt: new Date(),
+        },
+      });
   }
 
-  async getNotionConnection(userId: string): Promise<NotionConnection | undefined> {
+  async getNotionConnection(
+    userId: string
+  ): Promise<NotionConnection | undefined> {
     // @ts-ignore
     const result = await db
       .select()
@@ -277,7 +273,9 @@ export class DatabaseStorage implements IStorage {
 
   async deleteNotionConnection(userId: string): Promise<void> {
     // @ts-ignore
-    await db.delete(notionConnections).where(eq(notionConnections.userId, userId));
+    await db
+      .delete(notionConnections)
+      .where(eq(notionConnections.userId, userId));
   }
 }
 

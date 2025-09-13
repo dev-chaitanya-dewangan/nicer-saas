@@ -114,7 +114,8 @@ export const notionConnections = sqliteTable("notion_connections", {
     .default(sql`(lower(hex(randomblob(16))))`),
   userId: text("user_id")
     .references(() => users.id, { onDelete: "cascade" })
-    .notNull(),
+    .notNull()
+    .unique(),
   accessToken: text("access_token").notNull(),
   workspaceId: text("workspace_id"),
   workspaceName: text("workspace_name"),

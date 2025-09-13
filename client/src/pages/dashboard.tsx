@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Header } from "@/components/layout/Header";
@@ -28,6 +28,19 @@ export default function Dashboard() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const { data: user, isLoading: userLoading } = useQuery<User>({
+    queryKey: ["/api/auth/user"],
+    enabled: isAuthenticated,
+    retry: false,
+  });
+
+  const { data: notionUser, isLoading: notionLoading, refetch: refetchNotionUser } = useQuery({
+    queryKey: ["/api/notion/user"],
+    enabled: isAuthenticated,
+    retry: false,
+  });
 
   useEffect(() => {
     // Handle OAuth callback parameters
@@ -43,16 +56,36 @@ export default function Dashboard() {
       });
       // Clean up URL
       window.history.replaceState({}, document.title, '/dashboard');
+      // Refetch Notion user data
+      refetchNotionUser();
+      setIsConnecting(false);
     }
 
     if (notionError) {
+      const errorMessage = decodeURIComponent(notionError);
       toast({
         title: "Connection Failed",
-        description: decodeURIComponent(notionError),
+        description: errorMessage.includes('invalid_client') 
+          ? "Invalid OAuth credentials. Please check your NOTION_CLIENT_ID and NOTION_CLIENT_SECRET in your environment configuration."
+          : errorMessage.includes('access_denied')
+          ? "You cancelled the Notion authorization. To deploy workspaces, you'll need to connect your Notion account."
+          : errorMessage,
         variant: "destructive",
       });
       // Clean up URL
       window.history.replaceState({}, document.title, '/dashboard');
+      setIsConnecting(false);
+    }
+
+    // Check if we're returning from Notion OAuth (have code param but no success/failure yet)
+    const code = urlParams.get('code');
+    if (code && !notionConnected && !notionError) {
+      setIsConnecting(true);
+      toast({
+        title: "Processing Connection",
+        description: "Finalizing your Notion account connection...",
+        variant: "default",
+      });
     }
 
     if (!authLoading && !isAuthenticated) {
@@ -65,19 +98,7 @@ export default function Dashboard() {
         window.location.href = "/api/login";
       }, 500);
     }
-  }, [isAuthenticated, authLoading, toast]);
-
-  const { data: user, isLoading: userLoading } = useQuery<User>({
-    queryKey: ["/api/auth/user"],
-    enabled: isAuthenticated,
-    retry: false,
-  });
-
-  const { data: notionUser, isLoading: notionLoading } = useQuery({
-    queryKey: ["/api/notion/user"],
-    enabled: isAuthenticated,
-    retry: false,
-  });
+  }, [isAuthenticated, authLoading, toast, refetchNotionUser]);
 
   const { data: workspaces, isLoading: workspacesLoading } = useQuery<Workspace[]>({
     queryKey: ["/api/workspaces"],
@@ -201,44 +222,86 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Notion Account</p>
-                  <p className="text-2xl font-bold">
-                    {notionLoading ? "..." : notionUser?.name ? "Connected" : "Not Connected"}
-                  </p>
+                          <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Notion Account</p>
+                    <p className="text-2xl font-bold">
+                      {notionLoading ? "..." : notionUser?.name ? "Connected" : "Not Connected"}
+                    </p>
+                  </div>
+                  <div className={`p-2 rounded-lg ${notionUser?.name ? 'bg-green-500/10' : 'bg-orange-500/10'}`}>
+                    {notionUser?.name ? (
+                      <ExternalLink className="w-5 h-5 text-green-500" />
+                    ) : (
+                      <ExternalLink className="w-5 h-5 text-orange-500" />
+                    )}
+                  </div>
                 </div>
-                <div className={`p-2 rounded-lg ${notionUser?.name ? 'bg-green-500/10' : 'bg-orange-500/10'}`}>
-                  {notionUser?.name ? (
-                    <ExternalLink className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <ExternalLink className="w-5 h-5 text-orange-500" />
-                  )}
-                </div>
-              </div>
-              {notionUser?.name && (
-                <div className="mt-2">
-                  <Badge variant="default" className="text-xs">
-                    {notionUser.name}
-                  </Badge>
-                </div>
-              )}
-              {!notionUser?.name && !notionLoading && (
-                <div className="mt-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="text-xs"
-                    onClick={() => window.location.href = '/api/connect/notion'}
-                  >
-                    Connect
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                {notionLoading && (
+                  <div className="mt-2">
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      Checking connection...
+                    </div>
+                  </div>
+                )}
+                {notionUser?.name && (
+                  <div className="mt-2 flex items-center space-x-2">
+                    <Badge variant="default" className="text-xs">
+                      {notionUser.name}
+                    </Badge>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="text-xs"
+                      onClick={async () => {
+                        try {
+                          await apiRequest("POST", "/api/notion/disconnect");
+                          queryClient.invalidateQueries({ queryKey: ["/api/notion/user"] });
+                          toast({
+                            title: "Success!",
+                            description: "Your Notion account has been disconnected.",
+                            variant: "default",
+                          });
+                        } catch (error) {
+                          toast({
+                            title: "Error",
+                            description: "Failed to disconnect Notion account.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                )}
+                {!notionUser?.name && !notionLoading && (
+                  <div className="mt-2">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="text-xs"
+                      onClick={() => {
+                        setIsConnecting(true);
+                        window.location.href = '/api/connect/notion';
+                      }}
+                      disabled={isConnecting}
+                    >
+                      {isConnecting ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        'Connect'
+                      )}
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Connect your Notion account to deploy AI-generated workspaces
+                    </p>
+                  </div>
+                )}
 
           <Card>
             <CardContent className="p-6">

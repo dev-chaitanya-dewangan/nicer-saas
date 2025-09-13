@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+// Remove duplicate import since it's already imported later in the file
 
 // Use local auth for development, Replit auth for production
 const isDevelopment = process.env.NODE_ENV === "development";
@@ -14,7 +14,11 @@ if (isDevelopment) {
   authModulePromise = import("./replitAuth");
 }
 
-import { getUncachableNotionClient, setCurrentUserId, clearCurrentUserId } from "./notionClient";
+import {
+  getUncachableNotionClient,
+  setCurrentUserId,
+  clearCurrentUserId,
+} from "./notionClient";
 import { setupNotionAuth } from "./notionAuth";
 import {
   generateNotionWorkspace,
@@ -347,8 +351,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-
-
   // Workspace routes
   app.get(
     "/api/workspaces",
@@ -479,7 +481,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         setCurrentUserId(userId);
-        
+
         try {
           const notion = await getUncachableNotionClient();
 
@@ -502,7 +504,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!validation.valid) {
             console.error("Workspace validation failed:", validation.errors);
             return res.status(400).json({
-              message: "Workspace specification is incompatible with Notion API",
+              message:
+                "Workspace specification is incompatible with Notion API",
               errors: validation.errors,
               warnings: validation.warnings,
             });
@@ -536,7 +539,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           clearCurrentUserId();
 
           // Include Notion user info in response for frontend display
-          res.json({ ...updatedWorkspace, notionUser: deployResult.notionUser });
+          res.json({
+            ...updatedWorkspace,
+            notionUser: deployResult.notionUser,
+          });
         } catch (error) {
           clearCurrentUserId();
           throw error;
