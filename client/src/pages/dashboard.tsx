@@ -30,6 +30,31 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    // Handle OAuth callback parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const notionConnected = urlParams.get('notion_connected');
+    const notionError = urlParams.get('notion_error');
+
+    if (notionConnected === 'true') {
+      toast({
+        title: "Success!",
+        description: "Your Notion account has been connected successfully.",
+        variant: "default",
+      });
+      // Clean up URL
+      window.history.replaceState({}, document.title, '/dashboard');
+    }
+
+    if (notionError) {
+      toast({
+        title: "Connection Failed",
+        description: decodeURIComponent(notionError),
+        variant: "destructive",
+      });
+      // Clean up URL
+      window.history.replaceState({}, document.title, '/dashboard');
+    }
+
     if (!authLoading && !isAuthenticated) {
       toast({
         title: "Unauthorized",
@@ -202,11 +227,14 @@ export default function Dashboard() {
               )}
               {!notionUser?.name && !notionLoading && (
                 <div className="mt-2">
-                  <Link href="https://www.notion.so/my-integrations" target="_blank">
-                    <Button size="sm" variant="outline" className="text-xs">
-                      Connect
-                    </Button>
-                  </Link>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="text-xs"
+                    onClick={() => window.location.href = '/api/connect/notion'}
+                  >
+                    Connect
+                  </Button>
                 </div>
               )}
             </CardContent>

@@ -1,14 +1,24 @@
 import { Client } from '@notionhq/client';
+import { storage } from './storage';
 
 let connectionSettings: any;
 
 async function getAccessToken() {
+  // Check if we're in a request context with authenticated user
+  if (typeof global !== 'undefined' && (global as any).currentUserId) {
+    const userId = (global as any).currentUserId;
+    const connection = await storage.getNotionConnection(userId);
+    if (connection?.accessToken) {
+      return connection.accessToken;
+    }
+  }
+
   // Local development fallback - use NOTION_ACCESS_TOKEN from environment
   if (process.env.NOTION_ACCESS_TOKEN) {
     return process.env.NOTION_ACCESS_TOKEN;
   }
   
-  // Replit environment authentication
+  // Replit environment authentication (fallback for production)
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY 
     ? 'repl ' + process.env.REPL_IDENTITY 
@@ -17,7 +27,7 @@ async function getAccessToken() {
     : null;
 
   if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl. For local development, set NOTION_ACCESS_TOKEN environment variable with your Notion integration token.');
+    throw new Error('Notion not connected. Please connect your Notion account first.');
   }
 
   connectionSettings = await fetch(
@@ -44,4 +54,18 @@ async function getAccessToken() {
 export async function getUncachableNotionClient() {
   const accessToken = await getAccessToken();
   return new Client({ auth: accessToken });
+}
+
+// Helper function to set current user context
+export function setCurrentUserId(userId: string) {
+  if (typeof global !== 'undefined') {
+    (global as any).currentUserId = userId;
+  }
+}
+
+// Helper function to clear current user context
+export function clearCurrentUserId() {
+  if (typeof global !== 'undefined') {
+    delete (global as any).currentUserId;
+  }
 }

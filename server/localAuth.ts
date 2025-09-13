@@ -14,6 +14,7 @@ export function getSession() {
       httpOnly: true,
       secure: false, // false for local development
       maxAge: sessionTtl,
+      sameSite: 'lax', // Allow cross-site requests for OAuth flow
     },
     name: 'connect.sid',
   });

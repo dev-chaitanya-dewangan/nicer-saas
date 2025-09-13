@@ -16,6 +16,19 @@ import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
 
 // Interface for storage operations
+export interface NotionConnection {
+  userId: string;
+  accessToken: string;
+  workspaceId: string;
+  workspaceName: string;
+  botId: string;
+  ownerEmail: string;
+  ownerName: string;
+  ownerAvatar?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 export interface IStorage {
   // User operations
   // (IMPORTANT) these user operations are mandatory for Replit Auth.
@@ -43,6 +56,11 @@ export interface IStorage {
   getConversation(id: string): Promise<Conversation | undefined>;
   getUserConversations(userId: string): Promise<Conversation[]>;
   updateConversation(id: string, messages: any[]): Promise<Conversation>;
+
+  // Notion connection operations
+  storeNotionConnection(connection: NotionConnection): Promise<void>;
+  getNotionConnection(userId: string): Promise<NotionConnection | undefined>;
+  deleteNotionConnection(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -62,7 +80,7 @@ export class DatabaseStorage implements IStorage {
       .values(userData)
       .onConflictDoUpdate({
         target: users.id,
-        set: {
+        set: { 
           ...userData,
           updatedAt: new Date(),
         },
@@ -230,6 +248,36 @@ export class DatabaseStorage implements IStorage {
       .where(eq(conversations.id, id))
       .returning();
     return result[0];
+  }
+
+  // Notion connection operations
+  async storeNotionConnection(connection: NotionConnection): Promise<void> {
+    // @ts-ignore
+    await db.insert(notionConnections).values({
+      ...connection,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: notionConnections.userId,
+      set: {
+        ...connection,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async getNotionConnection(userId: string): Promise<NotionConnection | undefined> {
+    // @ts-ignore
+    const result = await db
+      .select()
+      .from(notionConnections)
+      .where(eq(notionConnections.userId, userId));
+    return result[0];
+  }
+
+  async deleteNotionConnection(userId: string): Promise<void> {
+    // @ts-ignore
+    await db.delete(notionConnections).where(eq(notionConnections.userId, userId));
   }
 }
 

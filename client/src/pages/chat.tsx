@@ -145,20 +145,50 @@ export default function Chat() {
     },
     onError: (error: any) => {
       let errorMessage = error.message || "Failed to deploy workspace to Notion";
+      let suggestion = "";
       
       // Handle validation errors with detailed feedback
       if (error.errors && Array.isArray(error.errors)) {
         errorMessage = `Notion API Validation Failed:\n${error.errors.slice(0, 3).join('\n')}${error.errors.length > 3 ? '\n...and more' : ''}`;
       } else if (error.error) {
         // Use detailed error from server
-        errorMessage = `${error.error}\n\n${error.suggestion || ''}`;
+        errorMessage = error.error;
+        suggestion = error.suggestion || '';
+      }
+      
+      // Special handling for rate limit errors
+      const isRateLimitError = errorMessage.includes('rate limit') || errorMessage.includes('Rate limit') || errorMessage.includes('429');
+      if (isRateLimitError) {
+        errorMessage = "Notion API rate limit exceeded. This is common with complex workspaces.";
+        suggestion = "Please try again in a few minutes. For large workspaces, consider that Notion has strict rate limits on database creation (~3 requests per second).";
       }
       
       toast({
         title: "Deployment Failed", 
-        description: errorMessage,
+        description: (
+          <div>
+            <div>{errorMessage}</div>
+            {suggestion && (
+              <div className="mt-2 text-sm opacity-90">
+                <strong>Suggestion:</strong> {suggestion}
+              </div>
+            )}
+            {error.docs && (
+              <div className="mt-2">
+                <a 
+                  href={error.docs} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-sm underline"
+                >
+                  View Notion API Documentation
+                </a>
+              </div>
+            )}
+          </div>
+        ),
         variant: "destructive",
-        duration: 10000, // Give users time to read detailed messages
+        duration: 15000, // Give users more time to read detailed messages
       });
     },
   });

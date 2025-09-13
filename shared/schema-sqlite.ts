@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql } from "drizzle-orm";
 import {
   index,
   text,
@@ -16,16 +16,18 @@ export const sessions = sqliteTable(
   "sessions",
   {
     sid: text("sid").primaryKey(),
-    sess: text("sess", { mode: 'json' }).notNull(),
-    expire: integer("expire", { mode: 'timestamp' }).notNull(),
+    sess: text("sess", { mode: "json" }).notNull(),
+    expire: integer("expire", { mode: "timestamp" }).notNull(),
   },
-  (table) => [index("IDX_session_expire").on(table.expire)],
+  (table) => [index("IDX_session_expire").on(table.expire)]
 );
 
 // User storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
 export const users = sqliteTable("users", {
-  id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16))))`),
+  id: text("id")
+    .primaryKey()
+    .default(sql`(lower(hex(randomblob(16))))`),
   email: text("email").unique(),
   firstName: text("first_name"),
   lastName: text("last_name"),
@@ -35,14 +37,22 @@ export const users = sqliteTable("users", {
   subscriptionStatus: text("subscription_status").default("free"),
   monthlyUsage: integer("monthly_usage").default(0),
   usageLimit: integer("usage_limit").default(3),
-  createdAt: integer("created_at", { mode: 'timestamp' }).default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(sql`(unixepoch())`),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
 });
 
 // Notion workspaces table
 export const workspaces = sqliteTable("workspaces", {
-  id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16))))`),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  id: text("id")
+    .primaryKey()
+    .default(sql`(lower(hex(randomblob(16))))`),
+  userId: text("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
   title: text("title").notNull(),
   description: text("description"),
   prompt: text("prompt").notNull(),
@@ -50,39 +60,88 @@ export const workspaces = sqliteTable("workspaces", {
   theme: text("theme").default("professional"),
   status: text("status").default("draft"), // draft, generating, completed, deployed, failed
   templateId: text("template_id"),
-  aiResponse: text("ai_response", { mode: 'json' }),
-  createdAt: integer("created_at", { mode: 'timestamp' }).default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(sql`(unixepoch())`),
+  aiResponse: text("ai_response", { mode: "json" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
 });
 
 // Templates table
 export const templates = sqliteTable("templates", {
-  id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16))))`),
+  id: text("id")
+    .primaryKey()
+    .default(sql`(lower(hex(randomblob(16))))`),
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),
   prompt: text("prompt").notNull(),
-  tags: text("tags", { mode: 'json' }),
-  preview: text("preview", { mode: 'json' }),
-  isPublic: integer("is_public", { mode: 'boolean' }).default(true),
+  tags: text("tags", { mode: "json" }),
+  preview: text("preview", { mode: "json" }),
+  isPublic: integer("is_public", { mode: "boolean" }).default(true),
   usageCount: integer("usage_count").default(0),
-  createdAt: integer("created_at", { mode: 'timestamp' }).default(sql`(unixepoch())`),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
 });
 
 // Conversations table
 export const conversations = sqliteTable("conversations", {
-  id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16))))`),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
-  messages: text("messages", { mode: 'json' }).notNull(),
-  createdAt: integer("created_at", { mode: 'timestamp' }).default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: 'timestamp' }).default(sql`(unixepoch())`),
+  id: text("id")
+    .primaryKey()
+    .default(sql`(lower(hex(randomblob(16))))`),
+  userId: text("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  workspaceId: text("workspace_id").references(() => workspaces.id, {
+    onDelete: "cascade",
+  }),
+  messages: text("messages", { mode: "json" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+});
+
+// Notion connections table
+export const notionConnections = sqliteTable("notion_connections", {
+  id: text("id")
+    .primaryKey()
+    .default(sql`(lower(hex(randomblob(16))))`),
+  userId: text("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  accessToken: text("access_token").notNull(),
+  workspaceId: text("workspace_id"),
+  workspaceName: text("workspace_name"),
+  botId: text("bot_id"),
+  ownerEmail: text("owner_email"),
+  ownerName: text("owner_name"),
+  ownerAvatar: text("owner_avatar"),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
 });
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   workspaces: many(workspaces),
   conversations: many(conversations),
+  notionConnections: many(notionConnections),
+}));
+
+export const notionConnectionsRelations = relations(notionConnections, ({ one }) => ({
+  user: one(users, {
+    fields: [notionConnections.userId],
+    references: [users.id],
+  }),
 }));
 
 export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
@@ -130,3 +189,5 @@ export const insertConversationSchema = createInsertSchema(conversations).omit({
 });
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Conversation = typeof conversations.$inferSelect;
+
+export type NotionConnection = typeof notionConnections.$inferSelect;
