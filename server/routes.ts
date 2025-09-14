@@ -97,17 +97,23 @@ async function deployWorkspaceToNotion(
   userInfo?: any
 ): Promise<{ url: string; notionUser: any }> {
   try {
+    // Validate workspace data
+    if (!workspaceData || typeof workspaceData !== 'object') {
+      throw new Error("Invalid workspace data provided");
+    }
+
     // Create a main workspace page with rate limiting
-    const parentPage = await rateLimitWithBackoff(() =>
-      notion.pages.create({
-        parent: {
-          type: "page_id",
-          page_id: process.env.NOTION_PAGE_ID || getUserNotionPageId(notion),
-        },
-        properties: {
-          title: {
-            title: [
+    let parentPage: any;
+    try {
+      // Prepare children blocks from the first page's content if available
+      let childrenBlocks = [
+        {
+          object: "block",
+          type: "heading_1",
+          heading_1: {
+            rich_text: [
               {
+                type: "text",
                 text: {
                   content: workspaceData.title || "Generated Workspace",
                 },
@@ -115,14 +121,64 @@ async function deployWorkspaceToNotion(
             ],
           },
         },
-        children: [
-          {
-            object: "block",
-            type: "heading_1",
-            heading_1: {
-              rich_text: [
+        {
+          object: "block",
+          type: "paragraph",
+          paragraph: {
+            rich_text: [
+              {
+                type: "text",
+                text: {
+                  content:
+                    workspaceData.description ||
+                    "AI-generated workspace created with Nicer SaaS",
+                },
+              },
+            ],
+          },
+        },
+      ];
+
+      // If there are pages with rich content, add them to the parent page
+      if (workspaceData.pages && Array.isArray(workspaceData.pages) && workspaceData.pages.length > 0) {
+        const firstPage = workspaceData.pages[0];
+        if (firstPage.content) {
+          // If content is an array of blocks, use it directly
+          if (Array.isArray(firstPage.content)) {
+            childrenBlocks = firstPage.content;
+          }
+          // If content is a string, convert it to a paragraph
+          else if (typeof firstPage.content === 'string') {
+            childrenBlocks = [
+              {
+                object: "block",
+                type: "paragraph",
+                paragraph: {
+                  rich_text: [
+                    {
+                      type: "text",
+                      text: {
+                        content: firstPage.content,
+                      },
+                    },
+                  ],
+                },
+              },
+            ];
+          }
+        }
+      }
+
+      parentPage = await rateLimitWithBackoff(() =>
+        notion.pages.create({
+          parent: {
+            type: "page_id",
+            page_id: process.env.NOTION_PAGE_ID || getUserNotionPageId(notion),
+          },
+          properties: {
+            title: {
+              title: [
                 {
-                  type: "text",
                   text: {
                     content: workspaceData.title || "Generated Workspace",
                   },
@@ -130,28 +186,27 @@ async function deployWorkspaceToNotion(
               ],
             },
           },
-          {
-            object: "block",
-            type: "paragraph",
-            paragraph: {
-              rich_text: [
-                {
-                  type: "text",
-                  text: {
-                    content:
-                      workspaceData.description ||
-                      "AI-generated workspace created with Nicer SaaS",
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      })
-    );
+          children: childrenBlocks,
+        })
+      );
+      
+      if (!parentPage || !parentPage.id) {
+        throw new Error("Failed to create parent page in Notion");
+      }
+    } catch (pageError: any) {
+      console.error("Error creating parent page:", pageError);
+      throw new Error(
+        `Failed to create workspace page in Notion: ${
+          pageError.message || String(pageError)
+        }`
+      );
+    }
 
     // Create databases from the workspace data
     if (workspaceData.databases && Array.isArray(workspaceData.databases)) {
+      // Track created databases for relation handling
+      const createdDatabases: Record<string, string> = {};
+      
       // Create databases sequentially with enhanced rate limiting
       for (let index = 0; index < workspaceData.databases.length; index++) {
         const db = workspaceData.databases[index];
@@ -168,60 +223,101 @@ async function deployWorkspaceToNotion(
           if (db.properties && Array.isArray(db.properties)) {
             db.properties.forEach((prop: any) => {
               const propName = prop.name || prop.title || "Untitled";
-              switch (prop.type) {
-                case "text":
-                case "title":
-                  notionProperties[propName] = { title: {} };
-                  break;
-                case "number":
-                  notionProperties[propName] = { number: { format: "number" } };
-                  break;
-                case "select":
-                  notionProperties[propName] = {
-                    select: {
-                      options: (prop.options || []).map((opt: any) => ({
-                        name: opt.name || opt,
-                        color: opt.color || "default",
-                      })),
-                    },
-                  };
-                  break;
-                case "multiselect":
-                case "multi_select":
-                  notionProperties[propName] = {
-                    multi_select: {
-                      options: (prop.options || []).map((opt: any) => ({
-                        name: opt.name || opt,
-                        color: opt.color || "default",
-                      })),
-                    },
-                  };
-                  break;
-                case "date":
-                  notionProperties[propName] = { date: {} };
-                  break;
-                case "checkbox":
-                  notionProperties[propName] = { checkbox: {} };
-                  break;
-                case "url":
-                  notionProperties[propName] = { url: {} };
-                  break;
-                case "email":
-                  notionProperties[propName] = { email: {} };
-                  break;
-                case "phone":
-                  notionProperties[propName] = { phone_number: {} };
-                  break;
-                case "formula":
-                  notionProperties[propName] = {
-                    formula: { expression: prop.formula || "1" },
-                  };
-                  break;
-                case "relation":
-                  // Skip relations for now as they require target database
-                  break;
-                default:
-                  notionProperties[propName] = { rich_text: {} };
+              // Skip empty property names
+              if (!propName.trim()) return;
+              
+              try {
+                switch (prop.type) {
+                  case "text":
+                  case "title":
+                    notionProperties[propName] = { title: {} };
+                    break;
+                  case "number":
+                    notionProperties[propName] = { number: { format: prop.config?.format || "number" } };
+                    break;
+                  case "select":
+                    notionProperties[propName] = {
+                      select: {
+                        options: (prop.options || []).map((opt: any) => ({
+                          name: opt.name || opt,
+                          color: opt.color || "default",
+                        })),
+                      },
+                    };
+                    break;
+                  case "multiselect":
+                  case "multi_select":
+                    notionProperties[propName] = {
+                      multi_select: {
+                        options: (prop.options || []).map((opt: any) => ({
+                          name: opt.name || opt,
+                          color: opt.color || "default",
+                        })),
+                      },
+                    };
+                    break;
+                  case "date":
+                    notionProperties[propName] = { date: {} };
+                    break;
+                  case "checkbox":
+                    notionProperties[propName] = { checkbox: {} };
+                    break;
+                  case "url":
+                    notionProperties[propName] = { url: {} };
+                    break;
+                  case "email":
+                    notionProperties[propName] = { email: {} };
+                    break;
+                  case "phone_number":
+                    notionProperties[propName] = { phone_number: {} };
+                    break;
+                  case "formula":
+                    notionProperties[propName] = {
+                      formula: { expression: prop.config?.expression || "1" },
+                    };
+                    break;
+                  case "relation":
+                    // Skip relations for now as they require target database
+                    // We'll handle them in a second pass
+                    break;
+                  case "rollup":
+                    // Skip rollups for now as they require relations
+                    break;
+                  case "status":
+                    notionProperties[propName] = {
+                      status: {
+                        options: (prop.options || []).map((opt: any) => ({
+                          name: opt.name || opt,
+                          color: opt.color || "default",
+                        })),
+                      },
+                    };
+                    break;
+                  case "people":
+                    notionProperties[propName] = { people: {} };
+                    break;
+                  case "files":
+                    notionProperties[propName] = { files: {} };
+                    break;
+                  case "created_time":
+                    notionProperties[propName] = { created_time: {} };
+                    break;
+                  case "created_by":
+                    notionProperties[propName] = { created_by: {} };
+                    break;
+                  case "last_edited_time":
+                    notionProperties[propName] = { last_edited_time: {} };
+                    break;
+                  case "last_edited_by":
+                    notionProperties[propName] = { last_edited_by: {} };
+                    break;
+                  default:
+                    // Default to rich_text for unknown types
+                    notionProperties[propName] = { rich_text: {} };
+                }
+              } catch (propError: any) {
+                console.warn(`Error processing property "${propName}":`, propError.message);
+                // Skip invalid properties
               }
             });
           }
@@ -231,52 +327,129 @@ async function deployWorkspaceToNotion(
             notionProperties["Name"] = { title: {} };
           }
 
+          // Validate that we don't exceed Notion's property limit
+          if (Object.keys(notionProperties).length > 100) {
+            console.warn(`Database "${db.title || db.name}" has too many properties. Limiting to 100.`);
+            const keys = Object.keys(notionProperties);
+            keys.slice(100).forEach(key => delete notionProperties[key]);
+          }
+
           // Create database with rate limiting and retry mechanism
-          await rateLimitWithBackoff(() =>
-            notion.databases.create({
-              parent: {
-                type: "page_id",
-                page_id: parentPage.id,
-              },
-              title: [
-                {
-                  type: "text",
-                  text: {
-                    content: db.title || db.name || "Database",
-                  },
+          let createdDatabase: any;
+          try {
+            createdDatabase = await rateLimitWithBackoff(() =>
+              notion.databases.create({
+                parent: {
+                  type: "page_id",
+                  page_id: parentPage.id,
                 },
-              ],
-              properties: notionProperties,
-            })
-          );
+                title: [
+                  {
+                    type: "text",
+                    text: {
+                      content: db.title || db.name || "Database",
+                    },
+                  },
+                ],
+                properties: notionProperties,
+              })
+            );
+            
+            if (createdDatabase && createdDatabase.id) {
+              // Store database ID for relation handling
+              const dbName = db.title || db.name || `db_${index}`;
+              createdDatabases[dbName] = createdDatabase.id;
+              console.log(`Successfully created database: ${dbName} (${createdDatabase.id})`);
+            } else {
+              console.warn(`Failed to create database: ${db.title || db.name}`);
+            }
+          } catch (createError: any) {
+            console.error(`Error creating database "${db.title || db.name}":`, createError);
+            // Continue with other databases even if one fails
+            continue;
+          }
 
           // Progressive delay to prevent rate limiting - increase delay for complex templates
-          const baseDelay = 500;
-          const complexityFactor = Math.min(workspaceData.databases.length, 10); // Cap complexity factor
-          const delay = baseDelay + index * complexityFactor * 100;
+          const baseDelay = 300;
+          const complexityFactor = Math.min(workspaceData.databases.length, 5); // Cap complexity factor
+          const delay = baseDelay + index * complexityFactor * 50;
           console.log(`Waiting ${delay}ms before next database creation`);
           await new Promise((resolve) => setTimeout(resolve, delay));
         } catch (dbError: any) {
           console.error(
-            `Error creating database "${db.title || db.name}":`,
+            `Error processing database "${db.title || db.name}":`,
             dbError
           );
+          // Continue with other databases even if one fails
+          continue;
+        }
+      }
+    }
 
-          // If it's a rate limit error, throw it to stop the entire process
-          if (
-            dbError.status === 429 ||
-            dbError.code === "rate_limited" ||
-            (dbError.message && dbError.message.includes("rate limit"))
-          ) {
-            throw new Error(
-              `Rate limit exceeded while creating database "${
-                db.title || db.name
-              }". Please try again later.`
-            );
+        // Create individual pages with rich content
+    if (workspaceData.pages && Array.isArray(workspaceData.pages)) {
+      for (const page of workspaceData.pages) {
+        try {
+          // Skip the first page as it's already been used for the parent page content
+          if (workspaceData.pages.indexOf(page) === 0 && parentPage) {
+            continue;
           }
 
-          // Continue with other databases even if one fails
-          // (no need for continue statement here since we're at the end of the loop)
+          // Prepare children blocks from page content
+          let pageChildren: any[] = [];
+          
+          if (page.content) {
+            // If content is an array of blocks, use it directly
+            if (Array.isArray(page.content)) {
+              pageChildren = page.content;
+            }
+            // If content is a string, convert it to a paragraph
+            else if (typeof page.content === 'string') {
+              pageChildren = [
+                {
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: {
+                    rich_text: [
+                      {
+                        type: "text",
+                        text: {
+                          content: page.content,
+                        },
+                      },
+                    ],
+                  },
+                },
+              ];
+            }
+          }
+
+          // Create the page
+          const createdPage = await rateLimitWithBackoff(() =>
+            notion.pages.create({
+              parent: {
+                type: "page_id",
+                page_id: parentPage.id,
+              },
+              properties: {
+                title: {
+                  title: [
+                    {
+                      text: {
+                        content: page.title || "Untitled Page",
+                      },
+                    },
+                  ],
+                },
+              },
+              children: pageChildren,
+            })
+          );
+
+          console.log(`Successfully created page: ${page.title} (${createdPage.id})`);
+        } catch (pageError: any) {
+          console.error(`Error creating page "${page.title}":`, pageError);
+          // Continue with other pages even if one fails
         }
       }
     }
@@ -400,7 +573,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const aiResponse = await generateNotionWorkspace(
             validatedData.prompt,
-            validatedData.theme || "professional"
+            validatedData.theme || "professional",
+            validatedData.includeContent !== undefined ? validatedData.includeContent : true,
+            validatedData.contentDensity || "moderate",
+            userId
           );
 
           const updatedWorkspace = await storage.updateWorkspace(workspace.id, {

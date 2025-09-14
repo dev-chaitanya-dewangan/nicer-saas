@@ -1,0 +1,193 @@
+{
+  "title": "🚀 Product Roadmap - Q1-Q2 2024",
+  "description": "Comprehensive product roadmap with feature prioritization and timeline",
+  "theme": "professional",
+  "layout": "dashboard",
+  "databases": [
+    {
+      "name": "Features",
+      "description": "Product features with status and priority",
+      "properties": [
+        {
+          "name": "Name",
+          "type": "title"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "config": {
+            "options": [
+              {"name": "Backlog", "color": "gray"},
+              {"name": "Planning", "color": "blue"},
+              {"name": "In Development", "color": "yellow"},
+              {"name": "Testing", "color": "purple"},
+              {"name": "Completed", "color": "green"}
+            ]
+          }
+        },
+        {
+          "name": "Priority",
+          "type": "select",
+          "config": {
+            "options": [
+              {"name": "Low", "color": "gray"},
+              {"name": "Medium", "color": "blue"},
+              {"name": "High", "color": "orange"},
+              {"name": "Critical", "color": "red"}
+            ]
+          }
+        }
+      ],
+      "views": [
+        {
+          "name": "Board",
+          "type": "board",
+          "layout": "status"
+        }
+      ],
+      "relations": [],
+      "sampleData": [
+        {
+          "Name": "AI-Powered Analytics Dashboard",
+          "Status": "In Development",
+          "Priority": "High"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "title": "📅 Q1 2024 Roadmap",
+      "type": "page",
+      "content": [
+        {
+          "object": "block",
+          "type": "heading_1",
+          "heading_1": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "📅 Q1 2024 Product Roadmap"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "callout",
+          "callout": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "🎯 Focus: Deliver core features for beta launch"
+                }
+              }
+            ],
+            "icon": {
+              "type": "emoji",
+              "emoji": "🎯"
+            },
+            "color": "blue"
+          }
+        },
+        {
+          "object": "block",
+          "type": "heading_2",
+          "heading_2": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "📅 Key Milestones"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "column_list",
+          "column_list": {
+            "children": [
+              {
+                "object": "block",
+                "type": "column",
+                "column": {
+                  "children": [
+                    {
+                      "object": "block",
+                      "type": "heading_3",
+                      "heading_3": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "🎯 High Priority"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "object": "block",
+                      "type": "bulleted_list_item",
+                      "bulleted_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "🚀 AI-Powered Analytics Dashboard"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "object": "block",
+                "type": "column",
+                "column": {
+                  "children": [
+                    {
+                      "object": "block",
+                      "type": "heading_3",
+                      "heading_3": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "📝 Medium Priority"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "object": "block",
+                      "type": "bulleted_list_item",
+                      "bulleted_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "📱 Mobile App Beta Release"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

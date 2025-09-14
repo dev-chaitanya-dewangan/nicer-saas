@@ -58,6 +58,8 @@ export const workspaces = sqliteTable("workspaces", {
   prompt: text("prompt").notNull(),
   notionPageId: text("notion_page_id"),
   theme: text("theme").default("professional"),
+  includeContent: integer("include_content", { mode: "boolean" }).default(true),
+  contentDensity: text("content_density").default("moderate"),
   status: text("status").default("draft"), // draft, generating, completed, deployed, failed
   templateId: text("template_id"),
   aiResponse: text("ai_response", { mode: "json" }),

@@ -121,75 +121,87 @@ export const industryTemplates = {
   }
 };
 
+// Function to get content density specifications
+export function getContentDensitySpecs(density: "minimal" | "moderate" | "rich"): any {
+  switch (density) {
+    case "minimal":
+      return {
+        databaseEntries: "2-3",
+        pageContentDepth: "basic structure with minimal examples",
+        sampleDataDetail: "placeholder-style with basic information",
+        crm: { companies: 1, deals: 1, contacts: 1 },
+        other: 2
+      };
+    case "moderate":
+      return {
+        databaseEntries: "5-7",
+        pageContentDepth: "detailed structure with realistic examples",
+        sampleDataDetail: "realistic business scenarios with key details",
+        crm: { companies: 3, deals: 3, contacts: 3 },
+        other: 4
+      };
+    case "rich":
+      return {
+        databaseEntries: "8-10",
+        pageContentDepth: "comprehensive structure with interconnected examples",
+        sampleDataDetail: "complete business simulations with full context",
+        crm: { companies: 5, deals: 5, contacts: 5 },
+        other: 8
+      };
+  }
+}
+
 // Function to get industry-specific sample data
 export function getIndustrySampleData(industry: string, templateType: string, contentDensity: 'minimal' | 'moderate' | 'rich'): any[] {
-  const industryData = industryTemplates[industry as keyof typeof industryTemplates];
-  
-  if (!industryData) {
-    return []; // Return empty array if industry not found
-  }
-  
-  const templateData = industryData[templateType as keyof typeof industryTemplates.startup];
-  
-  if (!templateData) {
-    return []; // Return empty array if template type not found
-  }
-  
-  // Convert the template data to an array of items based on content density
-  let sampleData: any[] = [];
-  
-  if (templateType === 'crm') {
-    // For CRM, we have companies, deals, and contacts
-    const companies = templateData.companies || [];
-    const deals = templateData.deals || [];
-    const contacts = templateData.contacts || [];
+  try {
+    const industryData = industryTemplates[industry as keyof typeof industryTemplates];
     
-    switch (contentDensity) {
-      case 'minimal':
-        sampleData = [
-          { type: 'company', data: companies.slice(0, 1) },
-          { type: 'deal', data: deals.slice(0, 1) },
-          { type: 'contact', data: contacts.slice(0, 1) }
-        ];
-        break;
-      case 'moderate':
-        sampleData = [
-          { type: 'company', data: companies.slice(0, 3) },
-          { type: 'deal', data: deals.slice(0, 3) },
-          { type: 'contact', data: contacts.slice(0, 3) }
-        ];
-        break;
-      case 'rich':
-        sampleData = [
-          { type: 'company', data: companies },
-          { type: 'deal', data: deals },
-          { type: 'contact', data: contacts }
-        ];
-        break;
+    if (!industryData) {
+      return []; // Return empty array if industry not found
     }
-  } else {
-    // For other template types, we just need to limit the data based on content density
-    const entries = Object.keys(templateData).reduce((acc, key) => {
-      if (Array.isArray(templateData[key])) {
-        acc = acc.concat(templateData[key].map((item: any) => ({ ...item, category: key })));
-      }
-      return acc;
-    }, []);
     
-    switch (contentDensity) {
-      case 'minimal':
-        sampleData = entries.slice(0, 2);
-        break;
-      case 'moderate':
-        sampleData = entries.slice(0, 4);
-        break;
-      case 'rich':
-        sampleData = entries;
-        break;
+    const templateData = industryData[templateType as keyof typeof industryTemplates.startup];
+    
+    if (!templateData) {
+      return []; // Return empty array if template type not found
     }
+    
+    // Get content density specifications
+    const densitySpecs = getContentDensitySpecs(contentDensity);
+    
+    // Convert the template data to an array of items based on content density
+    let sampleData: any[] = [];
+    
+    if (templateType === 'crm') {
+      // For CRM, we have companies, deals, and contacts
+      const companies = templateData.companies || [];
+      const deals = templateData.deals || [];
+      const contacts = templateData.contacts || [];
+      
+      const crmSpecs = densitySpecs.crm;
+      
+      sampleData = [
+        { type: 'company', data: companies.slice(0, crmSpecs.companies) },
+        { type: 'deal', data: deals.slice(0, crmSpecs.deals) },
+        { type: 'contact', data: contacts.slice(0, crmSpecs.contacts) }
+      ];
+    } else {
+      // For other template types, we just need to limit the data based on content density
+      const entries = Object.keys(templateData).reduce((acc, key) => {
+        if (Array.isArray(templateData[key])) {
+          acc = acc.concat(templateData[key].map((item: any) => ({ ...item, category: key })));
+        }
+        return acc;
+      }, []);
+      
+      sampleData = entries.slice(0, densitySpecs.other);
+    }
+    
+    return sampleData;
+  } catch (error) {
+    console.warn("Error getting industry sample data:", error);
+    return []; // Return empty array on error
   }
-  
-  return sampleData;
 }
 
 // Function to generate visual content flows for specific templates
@@ -549,24 +561,62 @@ export function generateVisualContentFlow(industry: string, templateType: string
 
 // Function to detect industry context from prompt
 export function detectIndustryContext(prompt: string): string {
+  try {
+    const promptLower = prompt.toLowerCase();
+    
+    if (promptLower.includes('startup') || promptLower.includes('tech') || promptLower.includes('innovat')) {
+      return 'startup';
+    }
+    
+    if (promptLower.includes('design') || promptLower.includes('creative') || promptLower.includes('agency')) {
+      return 'creative';
+    }
+    
+    if (promptLower.includes('enterprise') || promptLower.includes('corporate') || promptLower.includes('company')) {
+      return 'enterprise';
+    }
+    
+    if (promptLower.includes('personal') || promptLower.includes('life') || promptLower.includes('habit')) {
+      return 'personal';
+    }
+    
+    // Default to enterprise if no specific industry detected
+    return 'enterprise';
+  } catch (error) {
+    console.warn("Error detecting industry context:", error);
+    return 'enterprise'; // Default fallback
+  }
+}
+
+// Enhanced template type detection
+export function detectTemplateType(prompt: string): string {
   const promptLower = prompt.toLowerCase();
   
-  if (promptLower.includes('startup') || promptLower.includes('tech') || promptLower.includes('innovat')) {
-    return 'startup';
+  if ((promptLower.includes("crm") || promptLower.includes("customer")) && 
+      (promptLower.includes("relationship") || promptLower.includes("sales"))) {
+    return "crm";
   }
   
-  if (promptLower.includes('design') || promptLower.includes('creative') || promptLower.includes('agency')) {
-    return 'creative';
+  if ((promptLower.includes("content") && promptLower.includes("calendar")) || 
+      (promptLower.includes("social") && promptLower.includes("media"))) {
+    return "contentCalendar";
   }
   
-  if (promptLower.includes('enterprise') || promptLower.includes('corporate') || promptLower.includes('company')) {
-    return 'enterprise';
+  if (promptLower.includes("habit") || promptLower.includes("tracker") || 
+      promptLower.includes("routine")) {
+    return "habitTracker";
   }
   
-  if (promptLower.includes('personal') || promptLower.includes('life') || promptLower.includes('habit')) {
-    return 'personal';
+  if (promptLower.includes("roadmap") || promptLower.includes("product") || 
+      (promptLower.includes("feature") && promptLower.includes("release"))) {
+    return "productRoadmap";
   }
   
-  // Default to enterprise if no specific industry detected
-  return 'enterprise';
+  if (promptLower.includes("project") && 
+      (promptLower.includes("management") || promptLower.includes("task"))) {
+    return "projectManagement";
+  }
+  
+  // Default to project management for general workspaces
+  return "projectManagement";
 }

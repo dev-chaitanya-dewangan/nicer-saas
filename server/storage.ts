@@ -297,70 +297,85 @@ export class DatabaseStorage implements IStorage {
   
   // Aesthetic learning operations
   async trackAestheticInteraction(data: AestheticLearningData): Promise<void> {
-    // Store aesthetic interaction data in the workspace metadata
-    // @ts-ignore
-    await db
-      .update(workspaces)
-      .set({
-        metadata: sql`json_patch(ifnull(${workspaces.metadata}, '{}'), ${JSON.stringify({
-          aestheticLearning: {
-            prompt: data.prompt,
-            selectedContent: data.selectedContent,
-            contentDensity: data.contentDensity,
-            modifications: data.modifications,
-            finalRating: data.finalRating,
-            industryContext: data.industryContext,
-            createdAt: data.createdAt
-          }
-        })})`,
-        updatedAt: new Date(),
-      })
-      .where(eq(workspaces.id, data.workspaceId));
+    try {
+      // Store aesthetic interaction data in the workspace metadata
+      // @ts-ignore
+      await db
+        .update(workspaces)
+        .set({
+          metadata: sql`json_patch(ifnull(${workspaces.metadata}, '{}'), ${JSON.stringify({
+            aestheticLearning: {
+              prompt: data.prompt,
+              selectedContent: data.selectedContent,
+              contentDensity: data.contentDensity,
+              modifications: data.modifications,
+              finalRating: data.finalRating,
+              industryContext: data.industryContext,
+              createdAt: data.createdAt
+            }
+          })})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(workspaces.id, data.workspaceId));
+    } catch (error) {
+      console.warn("Failed to track aesthetic interaction:", error);
+      // Don't throw error as this is non-critical functionality
+    }
   }
 
   async getUserAestheticPreferences(userId: string): Promise<any> {
-    // Retrieve user's aesthetic preferences from their workspaces
-    // @ts-ignore
-    const result = await db
-      .select({ metadata: workspaces.metadata })
-      .from(workspaces)
-      .where(eq(workspaces.userId, userId));
-    
-    // Extract aesthetic preferences from metadata
-    const preferences: any = {
-      contentDensityPreferences: {},
-      includeContentPreferences: 0,
-      industryPreferences: {}
-    };
-    
-    result.forEach((workspace: any) => {
-      if (workspace.metadata && workspace.metadata.aestheticLearning) {
-        const learningData = workspace.metadata.aestheticLearning;
-        
-        // Count content density preferences
-        if (preferences.contentDensityPreferences[learningData.contentDensity]) {
-          preferences.contentDensityPreferences[learningData.contentDensity]++;
-        } else {
-          preferences.contentDensityPreferences[learningData.contentDensity] = 1;
-        }
-        
-        // Count include content preferences
-        if (learningData.selectedContent) {
-          preferences.includeContentPreferences++;
-        }
-        
-        // Count industry preferences
-        if (learningData.industryContext) {
-          if (preferences.industryPreferences[learningData.industryContext]) {
-            preferences.industryPreferences[learningData.industryContext]++;
+    try {
+      // Retrieve user's aesthetic preferences from their workspaces
+      // @ts-ignore
+      const result = await db
+        .select({ metadata: workspaces.metadata })
+        .from(workspaces)
+        .where(eq(workspaces.userId, userId));
+      
+      // Extract aesthetic preferences from metadata
+      const preferences: any = {
+        contentDensityPreferences: {},
+        includeContentPreferences: 0,
+        industryPreferences: {}
+      };
+      
+      result.forEach((workspace: any) => {
+        if (workspace.metadata && workspace.metadata.aestheticLearning) {
+          const learningData = workspace.metadata.aestheticLearning;
+          
+          // Count content density preferences
+          if (preferences.contentDensityPreferences[learningData.contentDensity]) {
+            preferences.contentDensityPreferences[learningData.contentDensity]++;
           } else {
-            preferences.industryPreferences[learningData.industryContext] = 1;
+            preferences.contentDensityPreferences[learningData.contentDensity] = 1;
+          }
+          
+          // Count include content preferences
+          if (learningData.selectedContent) {
+            preferences.includeContentPreferences++;
+          }
+          
+          // Count industry preferences
+          if (learningData.industryContext) {
+            if (preferences.industryPreferences[learningData.industryContext]) {
+              preferences.industryPreferences[learningData.industryContext]++;
+            } else {
+              preferences.industryPreferences[learningData.industryContext] = 1;
+            }
           }
         }
-      }
-    });
-    
-    return preferences;
+      });
+      
+      return preferences;
+    } catch (error) {
+      console.warn("Failed to get user aesthetic preferences:", error);
+      // Return default preferences
+      return {
+        contentDensityPreferences: {},
+        includeContentPreferences: 0,
+        industryPreferences: {}
+      };
+    }
   }
 }
 

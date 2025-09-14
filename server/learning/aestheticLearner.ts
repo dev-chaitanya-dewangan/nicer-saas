@@ -48,7 +48,8 @@ export class AestheticLearner {
       
       console.log(`Tracked aesthetic interaction for user ${data.userId}`);
     } catch (error) {
-      console.error("Error tracking aesthetic interaction:", error);
+      console.warn("Error tracking aesthetic interaction:", error);
+      // Don't throw error as this is non-critical functionality
     }
   }
 
@@ -71,7 +72,7 @@ export class AestheticLearner {
       
       return suggestions;
     } catch (error) {
-      console.error("Error refining aesthetic suggestions:", error);
+      console.warn("Error refining aesthetic suggestions:", error);
       // Return default recommendations
       return {
         recommendedContentDensity: "moderate",
@@ -102,7 +103,7 @@ export class AestheticLearner {
       
       return profile;
     } catch (error) {
-      console.error("Error building user aesthetic profile:", error);
+      console.warn("Error building user aesthetic profile:", error);
       // Return default profile
       return {
         preferredContentDensity: "moderate",
