@@ -5,6 +5,7 @@ import { TemplateCard } from "@/components/templates/TemplateCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +22,8 @@ import {
   Briefcase,
   GraduationCap,
   Heart,
-  Palette
+  Palette,
+  Sparkles
 } from "lucide-react";
 import type { Template } from "@shared/schema";
 
@@ -31,6 +33,8 @@ export default function Templates() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTheme, setSelectedTheme] = useState("professional");
+  const [includeContent, setIncludeContent] = useState(true);
+  const [contentDensity, setContentDensity] = useState<"minimal" | "moderate" | "rich">("moderate");
 
   const { data: templates, isLoading } = useQuery<Template[]>({
     queryKey: ["/api/templates", selectedCategory !== "all" ? selectedCategory : undefined],
@@ -38,8 +42,8 @@ export default function Templates() {
   });
 
   const useTemplateMutation = useMutation({
-    mutationFn: async ({ templateId, theme }: { templateId: string; theme: string }) => {
-      const response = await apiRequest("POST", `/api/templates/${templateId}/use`, { theme });
+    mutationFn: async ({ templateId, theme, includeContent, contentDensity }: { templateId: string; theme: string; includeContent: boolean; contentDensity: "minimal" | "moderate" | "rich" }) => {
+      const response = await apiRequest("POST", `/api/templates/${templateId}/use`, { theme, includeContent, contentDensity });
       return response.json();
     },
     onSuccess: (workspace) => {
@@ -155,7 +159,9 @@ export default function Templates() {
   const handleUseTemplate = (template: any) => {
     useTemplateMutation.mutate({
       templateId: template.id,
-      theme: selectedTheme
+      theme: selectedTheme,
+      includeContent,
+      contentDensity
     });
   };
 
@@ -219,6 +225,42 @@ export default function Templates() {
             </SelectContent>
           </Select>
         </div>
+        
+        {/* Aesthetic Controls */}
+        <Card className="mb-8">
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                <span className="font-medium">Aesthetic Preferences</span>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm">Include Content:</span>
+                  <Switch
+                    checked={includeContent}
+                    onCheckedChange={setIncludeContent}
+                  />
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm">Density:</span>
+                  <Select value={contentDensity} onValueChange={setContentDensity}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minimal">Minimal</SelectItem>
+                      <SelectItem value="moderate">Moderate</SelectItem>
+                      <SelectItem value="rich">Rich</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Templates Grid */}
         {isLoading ? (

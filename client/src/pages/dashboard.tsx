@@ -20,7 +20,8 @@ import {
   Database,
   Layout,
   Clock,
-  Loader2
+  Loader2,
+  Star
 } from "lucide-react";
 import type { Workspace, User } from "@shared/schema";
 
@@ -29,6 +30,7 @@ export default function Dashboard() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [ratings, setRatings] = useState<Record<string, number>>({});
 
   const { data: user, isLoading: userLoading } = useQuery<User>({
     queryKey: ["/api/auth/user"],
@@ -147,6 +149,29 @@ export default function Dashboard() {
         description: errorMessage,
         variant: "destructive",
         duration: 10000,
+      });
+    },
+  });
+
+  const rateWorkspaceMutation = useMutation({
+    mutationFn: async ({ workspaceId, rating }: { workspaceId: string; rating: number }) => {
+      const response = await apiRequest("POST", `/api/workspaces/${workspaceId}/rate`, { rating });
+      return response.json();
+    },
+    onSuccess: (data: any, variables: { workspaceId: string; rating: number }) => {
+      // Update local ratings state
+      setRatings(prev => ({ ...prev, [variables.workspaceId]: variables.rating }));
+      
+      toast({
+        title: "Rating Submitted",
+        description: "Thank you for your feedback!",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Rating Failed",
+        description: error.message || "Failed to submit rating",
+        variant: "destructive",
       });
     },
   });
@@ -451,6 +476,24 @@ export default function Dashboard() {
                             )}
                             Deploy
                           </Button>
+                        )}
+                        {workspace.status === 'deployed' && (
+                          <div className="flex items-center space-x-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Button
+                                key={star}
+                                variant="ghost"
+                                size="sm"
+                                className="p-1 h-8 w-8"
+                                onClick={() => rateWorkspaceMutation.mutate({ workspaceId: workspace.id, rating: star })}
+                                disabled={rateWorkspaceMutation.isPending}
+                              >
+                                <Star 
+                                  className={`w-4 h-4 ${star <= (ratings[workspace.id] || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} 
+                                />
+                              </Button>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>

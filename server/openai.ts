@@ -1,4 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
+import { detectIndustryContext, getIndustrySampleData, generateVisualContentFlow } from "./contentGenerators/industryContent";
+import { AestheticContentEngine } from "./aestheticContentGenerator";
+import { aestheticLearner } from "./learning/aestheticLearner";
 
 // Using Gemini AI for workspace generation with free API key
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
@@ -126,9 +129,65 @@ export function validateWorkspaceSpec(spec: NotionWorkspaceSpec): { valid: boole
 
 export async function generateNotionWorkspace(
   prompt: string,
-  theme: string = "professional"
+  theme: string = "professional",
+  includeContent: boolean = true,
+  contentDensity: "minimal" | "moderate" | "rich" = "moderate",
+  userId?: string
 ): Promise<NotionWorkspaceSpec> {
   try {
+    // Detect industry context from prompt
+    const industryContext = detectIndustryContext(prompt);
+    
+    // If we have a userId, get personalized aesthetic suggestions
+    let personalizedDensity = contentDensity;
+    let personalizedIncludeContent = includeContent;
+    let personalizedTheme = theme;
+    
+    if (userId) {
+      try {
+        const suggestions = await aestheticLearner.refineAestheticSuggestions(userId, prompt);
+        personalizedDensity = suggestions.recommendedContentDensity;
+        personalizedIncludeContent = suggestions.recommendedIncludeContent;
+        if (suggestions.recommendedTheme) {
+          personalizedTheme = suggestions.recommendedTheme;
+        }
+      } catch (error) {
+        console.warn("Failed to get personalized aesthetic suggestions:", error);
+      }
+    }
+    
+    // Generate aesthetic content specifications
+    const aestheticContent = AestheticContentEngine.generateAestheticContent(
+      prompt,
+      industryContext,
+      personalizedDensity
+    );
+    
+    // Get industry-specific sample data if content is to be included
+    let industrySampleData: any[] = [];
+    if (personalizedIncludeContent) {
+      // Determine template type based on prompt keywords
+      let templateType = "projectManagement";
+      if (prompt.toLowerCase().includes("crm") || prompt.toLowerCase().includes("customer")) {
+        templateType = "crm";
+      } else if (prompt.toLowerCase().includes("content") || prompt.toLowerCase().includes("calendar")) {
+        templateType = "contentCalendar";
+      } else if (prompt.toLowerCase().includes("habit") || prompt.toLowerCase().includes("life")) {
+        templateType = "habitTracker";
+      } else if (prompt.toLowerCase().includes("roadmap") || prompt.toLowerCase().includes("product")) {
+        templateType = "productRoadmap";
+      }
+      
+      industrySampleData = getIndustrySampleData(industryContext, templateType, personalizedDensity);
+    }
+    
+    // Generate visual content flow for enhanced page layouts
+    const visualContentFlow = generateVisualContentFlow(industryContext, 
+      prompt.toLowerCase().includes("content") && prompt.toLowerCase().includes("calendar") ? "contentCalendar" :
+      prompt.toLowerCase().includes("roadmap") || prompt.toLowerCase().includes("product") ? "productRoadmap" :
+      "projectManagement", 
+      personalizedDensity);
+    
     const systemPrompt = `You are an expert Notion workspace designer who creates VISUALLY STUNNING, professional workspaces. Generate a complete, production-ready Notion workspace that is both functionally powerful AND aesthetically extraordinary.
 
 🎨 AESTHETIC EXCELLENCE REQUIREMENTS:
@@ -166,7 +225,7 @@ export async function generateNotionWorkspace(
 - Make data interconnected through relations
 - Use professional names, realistic dates, and meaningful values
 
-🎯 THEME APPLICATION (${theme}):
+🎯 THEME APPLICATION (${personalizedTheme}):
 - professional: Clean corporate aesthetics, structured layouts, business icons
 - pastel: Soft muted colors, gentle gradients, calm visual elements
 - dark: High contrast, sophisticated dark themes, premium feel
@@ -177,11 +236,53 @@ export async function generateNotionWorkspace(
 - soft: Gentle rounded aesthetics, subtle colors, comfortable layouts
 - rough: Bold industrial design, strong contrasts, powerful imagery
 
+🎨 AESTHETIC CONTENT ENHANCEMENT:
+- Generate realistic sample data based on industry context
+- Include visual callouts with strategic emoji usage
+- Create content density: ${personalizedDensity} (minimal/moderate/rich)
+- Add industry-specific realistic scenarios and data
+- Include professional business names, dates, and values
+- Make sample data interconnected and meaningful
+
+📊 SAMPLE DATA STRATEGY:
+- Rich: 8-10 comprehensive entries with full context
+- Moderate: 5-7 realistic entries with key details  
+- Minimal: 3-4 clean placeholders with guidance
+
+🎯 BUSINESS CONTEXT INFERENCE:
+- Analyze prompt for industry: startup, creative, enterprise, personal
+- Generate contextually appropriate sample data
+- Use realistic business metrics and terminology
+
+🎨 INDUSTRY-SPECIFIC CONTEXT (${industryContext}):
+- For ${industryContext} industry, use appropriate terminology and scenarios
+- Apply ${industryContext}-specific business models and processes
+- Use realistic company names and examples for ${industryContext} sector
+
+🎨 AESTHETIC SPECIFICATIONS:
+- Theme Colors: Primary(${aestheticContent.themeColors.primary}), Secondary(${aestheticContent.themeColors.secondary}), Accent(${aestheticContent.themeColors.accent})
+- Icon Set: ${aestheticContent.iconSet.join(', ')}
+- Content Style: ${aestheticContent.contentStyle}
+- Headers: ${aestheticContent.visualHierarchy.headers.join(', ')}
+- Callouts: ${aestheticContent.visualHierarchy.callouts.length} strategic callouts with emojis
+- Dividers: ${aestheticContent.visualHierarchy.dividers.join(', ')}
+
+${personalizedIncludeContent ? 
+`🎯 INDUSTRY-SPECIFIC SAMPLE DATA (${personalizedDensity} density):
+${JSON.stringify(industrySampleData, null, 2)}` : 
+`🎯 EMPTY TEMPLATES ONLY:
+- Generate clean templates without sample data as user requested empty workspace`}
+
+🎯 VISUAL CONTENT FLOW EXAMPLE (${personalizedDensity} density):
+${JSON.stringify(visualContentFlow, null, 2)}
+
 📝 CONTENT REQUIREMENTS:
 - Page content should be rich markdown strings with headers, callouts, and formatting
 - Include helpful instructions and templates for users to expand
 - Add navigation elements and clear section organization
 - Create reusable templates within pages
+- Structure content with visual hierarchy using columns, callouts, and dividers
+- Follow the visual content flow patterns shown above for industry-appropriate layouts
 
 🚀 VALIDATION & COMPATIBILITY:
 - Ensure all property types are valid Notion API types

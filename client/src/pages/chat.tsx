@@ -7,6 +7,7 @@ import { WorkspacePreview } from "@/components/workspace/WorkspacePreview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,7 +20,8 @@ import {
   RefreshCw, 
   Settings, 
   Save,
-  Loader2
+  Loader2,
+  Sparkles
 } from "lucide-react";
 import type { Workspace } from "@shared/schema";
 
@@ -34,6 +36,8 @@ export default function Chat() {
   const [selectedTheme, setSelectedTheme] = useState("professional");
   const [workspaceTitle, setWorkspaceTitle] = useState("");
   const [workspaceDescription, setWorkspaceDescription] = useState("");
+  const [includeContent, setIncludeContent] = useState(true);
+  const [contentDensity, setContentDensity] = useState<"minimal" | "moderate" | "rich">("moderate");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -74,7 +78,7 @@ export default function Chat() {
   });
 
   const createWorkspaceMutation = useMutation({
-    mutationFn: async (data: { title: string; description: string; prompt: string; theme: string }) => {
+    mutationFn: async (data: { title: string; description: string; prompt: string; theme: string; includeContent: boolean; contentDensity: "minimal" | "moderate" | "rich" }) => {
       const response = await apiRequest("POST", "/api/workspaces", data);
       return response.json();
     },
@@ -145,50 +149,20 @@ export default function Chat() {
     },
     onError: (error: any) => {
       let errorMessage = error.message || "Failed to deploy workspace to Notion";
-      let suggestion = "";
       
       // Handle validation errors with detailed feedback
       if (error.errors && Array.isArray(error.errors)) {
         errorMessage = `Notion API Validation Failed:\n${error.errors.slice(0, 3).join('\n')}${error.errors.length > 3 ? '\n...and more' : ''}`;
       } else if (error.error) {
         // Use detailed error from server
-        errorMessage = error.error;
-        suggestion = error.suggestion || '';
-      }
-      
-      // Special handling for rate limit errors
-      const isRateLimitError = errorMessage.includes('rate limit') || errorMessage.includes('Rate limit') || errorMessage.includes('429');
-      if (isRateLimitError) {
-        errorMessage = "Notion API rate limit exceeded. This is common with complex workspaces.";
-        suggestion = "Please try again in a few minutes. For large workspaces, consider that Notion has strict rate limits on database creation (~3 requests per second).";
+        errorMessage = `${error.error}\n\n${error.suggestion || ''}`;
       }
       
       toast({
         title: "Deployment Failed", 
-        description: (
-          <div>
-            <div>{errorMessage}</div>
-            {suggestion && (
-              <div className="mt-2 text-sm opacity-90">
-                <strong>Suggestion:</strong> {suggestion}
-              </div>
-            )}
-            {error.docs && (
-              <div className="mt-2">
-                <a 
-                  href={error.docs} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-sm underline"
-                >
-                  View Notion API Documentation
-                </a>
-              </div>
-            )}
-          </div>
-        ),
+        description: errorMessage,
         variant: "destructive",
-        duration: 15000, // Give users more time to read detailed messages
+        duration: 10000, // Give users time to read detailed messages
       });
     },
   });
@@ -207,7 +181,9 @@ export default function Chat() {
       title: workspaceTitle,
       description: workspaceDescription,
       prompt,
-      theme: selectedTheme
+      theme: selectedTheme,
+      includeContent,
+      contentDensity
     });
   };
 
@@ -351,6 +327,52 @@ export default function Chat() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              
+              {/* Aesthetic Controls */}
+              <div className="space-y-4 pt-4 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <label className="text-sm font-medium">Include AI-generated content</label>
+                  </div>
+                  <Switch
+                    checked={includeContent}
+                    onCheckedChange={setIncludeContent}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Content Density</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button
+                      variant={contentDensity === "minimal" ? "default" : "outline"}
+                      onClick={() => setContentDensity("minimal")}
+                      size="sm"
+                    >
+                      Minimal
+                    </Button>
+                    <Button
+                      variant={contentDensity === "moderate" ? "default" : "outline"}
+                      onClick={() => setContentDensity("moderate")}
+                      size="sm"
+                    >
+                      Moderate
+                    </Button>
+                    <Button
+                      variant={contentDensity === "rich" ? "default" : "outline"}
+                      onClick={() => setContentDensity("rich")}
+                      size="sm"
+                    >
+                      Rich
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {contentDensity === "minimal" && "Clean structure with placeholder guidance"}
+                    {contentDensity === "moderate" && "Realistic sample data with 3-5 examples per database"}
+                    {contentDensity === "rich" && "Complete business scenarios with 8-10 comprehensive examples"}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>

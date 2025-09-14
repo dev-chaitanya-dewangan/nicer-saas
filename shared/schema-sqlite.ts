@@ -61,6 +61,7 @@ export const workspaces = sqliteTable("workspaces", {
   status: text("status").default("draft"), // draft, generating, completed, deployed, failed
   templateId: text("template_id"),
   aiResponse: text("ai_response", { mode: "json" }),
+  metadata: text("metadata", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp" }).default(
     sql`(unixepoch())`
   ),
