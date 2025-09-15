@@ -49,6 +49,104 @@ async function getNotionUserInfo(notion: any) {
   }
 }
 
+// Helper function to transform AI-generated blocks to Notion API format
+function transformBlock(block: any): any {
+  if (!block || !block.type) {
+    return null;
+  }
+
+  const { type, ...rest } = block;
+  const notionBlock: any = {
+    object: 'block',
+    type: type,
+  };
+
+  switch (type) {
+    case 'heading_1':
+    case 'heading_2':
+    case 'heading_3':
+    case 'paragraph':
+    case 'bulleted_list_item':
+    case 'numbered_list_item':
+      notionBlock[type] = { rich_text: rest.rich_text || [] };
+      break;
+    case 'callout':
+      notionBlock[type] = {
+        rich_text: rest.rich_text || [],
+        icon: { type: 'emoji', emoji: rest.icon?.emoji || '💡' },
+        color: rest.color || 'default',
+      };
+      break;
+    case 'divider':
+      notionBlock[type] = {};
+      break;
+    case 'column_list':
+      notionBlock.type = 'column_list';
+      notionBlock.column_list = {
+        columns: rest.columns?.map((col: any) => ({
+          object: 'column',
+          children: col.children?.map(transformBlock).filter(Boolean) || [],
+        })) || [],
+      };
+      break;
+    default:
+      // For unknown block types, return as is, hoping it's a valid block
+      return block;
+  }
+
+  return notionBlock;
+}
+
+// Helper function to transform sample data item to Notion page properties
+function transformSampleDataToProperties(item: any, dbProperties: any[]): any {
+  const notionProperties: any = {};
+
+  for (const key in item) {
+    const value = item[key];
+    const prop = dbProperties.find(p => p.name === key);
+
+    if (!prop) continue;
+
+    switch (prop.type) {
+      case 'title':
+        notionProperties[key] = { title: [{ text: { content: value } }] };
+        break;
+      case 'rich_text':
+        notionProperties[key] = { rich_text: [{ text: { content: value } }] };
+        break;
+      case 'number':
+        notionProperties[key] = { number: value };
+        break;
+      case 'select':
+        notionProperties[key] = { select: { name: value } };
+        break;
+      case 'multi_select':
+        notionProperties[key] = { multi_select: value.map((v: string) => ({ name: v })) };
+        break;
+      case 'date':
+        notionProperties[key] = { date: { start: value } };
+        break;
+      case 'checkbox':
+        notionProperties[key] = { checkbox: value };
+        break;
+      case 'url':
+        notionProperties[key] = { url: value };
+        break;
+      case 'email':
+        notionProperties[key] = { email: value };
+        break;
+      case 'phone_number':
+        notionProperties[key] = { phone_number: value };
+        break;
+      case 'status':
+        notionProperties[key] = { status: { name: value } };
+        break;
+    }
+  }
+
+  return notionProperties;
+}
+
 // Enhanced rate limiting with exponential backoff
 async function rateLimitWithBackoff(
   operation: () => Promise<any>,
@@ -143,51 +241,49 @@ async function deployWorkspaceToNotion(
       if (workspaceData.pages && Array.isArray(workspaceData.pages) && workspaceData.pages.length > 0) {
         const firstPage = workspaceData.pages[0];
         if (firstPage.content) {
-          // If content is an array of blocks, use it directly
           if (Array.isArray(firstPage.content)) {
-            childrenBlocks = firstPage.content;
-          }
-          // If content is a string, convert it to a paragraph
-          else if (typeof firstPage.content === 'string') {
-            childrenBlocks = [
-              {
-                object: "block",
-                type: "paragraph",
-                paragraph: {
-                  rich_text: [
-                    {
-                      type: "text",
-                      text: {
-                        content: firstPage.content,
-                      },
-                    },
-                  ],
-                },
+            childrenBlocks = firstPage.content.map(transformBlock).filter(Boolean);
+          } else if (typeof firstPage.content === 'string') {
+            childrenBlocks.push({
+              object: 'block',
+              type: 'paragraph',
+              paragraph: {
+                rich_text: [{ type: 'text', text: { content: firstPage.content } }],
               },
-            ];
+            });
           }
         }
       }
 
-      parentPage = await rateLimitWithBackoff(() =>
-        notion.pages.create({
-          parent: {
-            type: "page_id",
-            page_id: process.env.NOTION_PAGE_ID || getUserNotionPageId(notion),
-          },
-          properties: {
-            title: {
-              title: [
-                {
-                  text: {
-                    content: workspaceData.title || "Generated Workspace",
-                  },
+      const pageDetails: any = {
+        parent: {
+          type: "page_id",
+          page_id: process.env.NOTION_PAGE_ID || await getUserNotionPageId(notion),
+        },
+        properties: {
+          title: {
+            title: [
+              {
+                text: {
+                  content: workspaceData.title || "Generated Workspace",
                 },
-              ],
-            },
+              },
+            ],
           },
-          children: childrenBlocks,
-        })
+        },
+        children: childrenBlocks,
+      };
+
+      if (workspaceData.icon) {
+        pageDetails.icon = { type: 'emoji', emoji: workspaceData.icon };
+      }
+
+      if (workspaceData.cover) {
+        pageDetails.cover = { type: 'external', external: { url: workspaceData.cover } };
+      }
+
+      parentPage = await rateLimitWithBackoff(() =>
+        notion.pages.create(pageDetails)
       );
       
       if (!parentPage || !parentPage.id) {
@@ -369,6 +465,23 @@ async function deployWorkspaceToNotion(
             continue;
           }
 
+          // Populate database with sample data
+          if (createdDatabase && db.sampleData && Array.isArray(db.sampleData)) {
+            for (const item of db.sampleData) {
+              try {
+                const notionProperties = transformSampleDataToProperties(item, db.properties);
+                await rateLimitWithBackoff(() =>
+                  notion.pages.create({
+                    parent: { database_id: createdDatabase.id },
+                    properties: notionProperties,
+                  })
+                );
+              } catch (sampleError: any) {
+                console.error(`Error creating sample data item in "${db.name}":`, sampleError);
+              }
+            }
+          }
+
           // Progressive delay to prevent rate limiting - increase delay for complex templates
           const baseDelay = 300;
           const complexityFactor = Math.min(workspaceData.databases.length, 5); // Cap complexity factor
@@ -382,6 +495,57 @@ async function deployWorkspaceToNotion(
           );
           // Continue with other databases even if one fails
           continue;
+        }
+      }
+
+      // Second pass: create relations
+      for (const db of workspaceData.databases) {
+        const dbId = createdDatabases[db.name];
+        if (!dbId) continue;
+
+        for (const prop of db.properties) {
+          if (prop.type === 'relation') {
+            const relatedDbId = createdDatabases[prop.relation.relatedDatabase];
+            if (relatedDbId) {
+              await rateLimitWithBackoff(() =>
+                notion.databases.update({
+                  database_id: dbId,
+                  properties: {
+                    [prop.name]: {
+                      relation: {
+                        database_id: relatedDbId,
+                      },
+                    },
+                  },
+                })
+              );
+            }
+          }
+        }
+      }
+
+      // Third pass: create rollups
+      for (const db of workspaceData.databases) {
+        const dbId = createdDatabases[db.name];
+        if (!dbId) continue;
+
+        for (const prop of db.properties) {
+          if (prop.type === 'rollup') {
+            await rateLimitWithBackoff(() =>
+              notion.databases.update({
+                database_id: dbId,
+                properties: {
+                  [prop.name]: {
+                    rollup: {
+                      relation_property_name: prop.rollup.relation,
+                      rollup_property_name: prop.rollup.property,
+                      function: prop.rollup.function,
+                    },
+                  },
+                },
+              })
+            );
+          }
         }
       }
     }
@@ -399,51 +563,49 @@ async function deployWorkspaceToNotion(
           let pageChildren: any[] = [];
           
           if (page.content) {
-            // If content is an array of blocks, use it directly
             if (Array.isArray(page.content)) {
-              pageChildren = page.content;
-            }
-            // If content is a string, convert it to a paragraph
-            else if (typeof page.content === 'string') {
-              pageChildren = [
-                {
-                  object: "block",
-                  type: "paragraph",
-                  paragraph: {
-                    rich_text: [
-                      {
-                        type: "text",
-                        text: {
-                          content: page.content,
-                        },
-                      },
-                    ],
-                  },
+              pageChildren = page.content.map(transformBlock).filter(Boolean);
+            } else if (typeof page.content === 'string') {
+              pageChildren.push({
+                object: 'block',
+                type: 'paragraph',
+                paragraph: {
+                  rich_text: [{ type: 'text', text: { content: page.content } }],
                 },
-              ];
+              });
             }
           }
 
           // Create the page
-          const createdPage = await rateLimitWithBackoff(() =>
-            notion.pages.create({
-              parent: {
-                type: "page_id",
-                page_id: parentPage.id,
-              },
-              properties: {
-                title: {
-                  title: [
-                    {
-                      text: {
-                        content: page.title || "Untitled Page",
-                      },
+          const pageDetails: any = {
+            parent: {
+              type: "page_id",
+              page_id: parentPage.id,
+            },
+            properties: {
+              title: {
+                title: [
+                  {
+                    text: {
+                      content: page.title || "Untitled Page",
                     },
-                  ],
-                },
+                  },
+                ],
               },
-              children: pageChildren,
-            })
+            },
+            children: pageChildren,
+          };
+
+          if (page.icon) {
+            pageDetails.icon = { type: 'emoji', emoji: page.icon };
+          }
+
+          if (page.cover) {
+            pageDetails.cover = { type: 'external', external: { url: page.cover } };
+          }
+
+          const createdPage = await rateLimitWithBackoff(() =>
+            notion.pages.create(pageDetails)
           );
 
           console.log(`Successfully created page: ${page.title} (${createdPage.id})`);
@@ -545,6 +707,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     (app as any).isAuthenticated,
     async (req: any, res) => {
       try {
+        console.log("Request body:", req.body);
         const userId = req.user.claims.sub;
         const user = await storage.getUser(userId);
 
@@ -566,6 +729,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId,
           status: "generating",
         });
+        console.log("Validated data:", validatedData);
 
         const workspace = await storage.createWorkspace(validatedData);
 
@@ -604,6 +768,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .status(400)
             .json({ message: "Invalid input", errors: error.errors });
         } else {
+          console.error("Caught a non-Zod error:", error);
           res.status(500).json({ message: "Failed to create workspace" });
         }
       }
