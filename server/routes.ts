@@ -49,6 +49,47 @@ async function getNotionUserInfo(notion: any) {
   }
 }
 
+// Helper function to transform AI-generated rich text to Notion API format
+function transformRichText(richText: any): any[] {
+    // Ensure we are working with an array
+    const richTextArray = Array.isArray(richText) ? richText : (typeof richText === 'string' ? [{ content: richText }] : []);
+
+    if (!richTextArray || richTextArray.length === 0) {
+        return [];
+    }
+
+    // Process each rich text part
+    return richTextArray.map(rt => {
+        if (typeof rt === 'string') {
+            return {
+                type: 'text',
+                text: { content: rt }
+            };
+        }
+
+        const annotations = rt.annotations || {};
+        // The AI might send markdown `**text**` in the content. Let's handle that.
+        // This is a simplification. A proper markdown parser would be better.
+        // For now, let's assume the AI provides annotations object.
+
+        return {
+            type: 'text',
+            text: {
+                content: rt.content || rt.text?.content || '',
+                ...(rt.link && { link: { url: rt.link.url || rt.link } }),
+            },
+            annotations: {
+                bold: annotations.bold || false,
+                italic: annotations.italic || false,
+                strikethrough: annotations.strikethrough || false,
+                underline: annotations.underline || false,
+                code: annotations.code || false,
+                color: annotations.color || 'default',
+            },
+        };
+    }).filter(rt => rt.text.content); // Filter out empty rich text objects
+}
+
 // Helper function to transform AI-generated blocks to Notion API format
 function transformBlock(block: any): any {
   if (!block || !block.type) {
@@ -68,20 +109,42 @@ function transformBlock(block: any): any {
     case 'paragraph':
     case 'bulleted_list_item':
     case 'numbered_list_item':
-      notionBlock[type] = { rich_text: rest.rich_text || [] };
+    case 'toggle':
+    case 'quote':
+      notionBlock[type] = {
+        rich_text: transformRichText(rest.rich_text || rest.content),
+      };
+      // For blocks that can have children
+      if (rest.children) {
+        notionBlock[type].children = rest.children.map(transformBlock).filter(Boolean);
+      }
       break;
     case 'callout':
+      const calloutColors: { [key: string]: string } = {
+        gray: 'gray_background',
+        brown: 'brown_background',
+        orange: 'orange_background',
+        yellow: 'yellow_background',
+        green: 'green_background',
+        blue: 'blue_background',
+        purple: 'purple_background',
+        pink: 'pink_background',
+        red: 'red_background',
+        default: 'gray_background',
+      };
       notionBlock[type] = {
-        rich_text: rest.rich_text || [],
-        icon: { type: 'emoji', emoji: rest.icon?.emoji || '💡' },
-        color: rest.color || 'default',
+        rich_text: transformRichText(rest.rich_text || rest.content),
+        icon: { type: 'emoji', emoji: rest.icon?.emoji || rest.icon || '💡' },
+        color: calloutColors[rest.color as string] || 'gray_background',
       };
       break;
     case 'divider':
       notionBlock[type] = {};
       break;
     case 'column_list':
-      notionBlock.type = 'column_list';
+      // The current implementation of column_list is incorrect for page creation.
+      // It requires a multi-step process which is not supported by the current `deployWorkspaceToNotion`.
+      // For now, we leave the logic as is to avoid breaking changes, and will address this in a separate step.
       notionBlock.column_list = {
         columns: rest.columns?.map((col: any) => ({
           object: 'column',
@@ -89,9 +152,22 @@ function transformBlock(block: any): any {
         })) || [],
       };
       break;
+    case 'image':
+        notionBlock[type] = {
+            type: rest.url?.includes('http') ? 'external' : 'file',
+            [rest.url?.includes('http') ? 'external' : 'file']: {
+                url: rest.url
+            },
+            caption: transformRichText(rest.caption || ''),
+        };
+        break;
     default:
-      // For unknown block types, return as is, hoping it's a valid block
-      return block;
+      // Pass-through for unknown block types, hoping it's a valid block object.
+      // This is risky but maintains flexibility.
+      if (rest) {
+          notionBlock[type] = rest;
+      }
+      break;
   }
 
   return notionBlock;
@@ -107,39 +183,78 @@ function transformSampleDataToProperties(item: any, dbProperties: any[]): any {
 
     if (!prop) continue;
 
+    // Skip null or undefined values, unless it's a checkbox
+    if (value === null || value === undefined) {
+      if (prop.type === 'checkbox') {
+        notionProperties[key] = { checkbox: false };
+      }
+      continue;
+    }
+
     switch (prop.type) {
       case 'title':
-        notionProperties[key] = { title: [{ text: { content: value } }] };
+        notionProperties[key] = { title: transformRichText(value) };
         break;
       case 'rich_text':
-        notionProperties[key] = { rich_text: [{ text: { content: value } }] };
+        notionProperties[key] = { rich_text: transformRichText(value) };
         break;
       case 'number':
-        notionProperties[key] = { number: value };
+        // Ensure value is a number
+        const numValue = Number(value);
+        if (!isNaN(numValue)) {
+            notionProperties[key] = { number: numValue };
+        }
         break;
       case 'select':
-        notionProperties[key] = { select: { name: value } };
+        // Value should be a string for select
+        if (typeof value === 'string') {
+            notionProperties[key] = { select: { name: value } };
+        } else if (typeof value === 'object' && value.name) {
+            notionProperties[key] = { select: { name: value.name } };
+        }
         break;
       case 'multi_select':
-        notionProperties[key] = { multi_select: value.map((v: string) => ({ name: v })) };
+        // Value should be an array of strings or objects with a name property
+        if (Array.isArray(value)) {
+            notionProperties[key] = { multi_select: value.map((v: any) => (typeof v === 'string' ? { name: v } : v)) };
+        }
         break;
       case 'date':
-        notionProperties[key] = { date: { start: value } };
+        // Value can be a string or a date object
+        if (typeof value === 'string') {
+            notionProperties[key] = { date: { start: value } };
+        } else if (typeof value === 'object' && value.start) {
+            notionProperties[key] = { date: value };
+        }
         break;
       case 'checkbox':
-        notionProperties[key] = { checkbox: value };
+        notionProperties[key] = { checkbox: Boolean(value) };
         break;
       case 'url':
-        notionProperties[key] = { url: value };
+        if (typeof value === 'string') {
+            notionProperties[key] = { url: value };
+        }
         break;
       case 'email':
-        notionProperties[key] = { email: value };
+        if (typeof value === 'string') {
+            notionProperties[key] = { email: value };
+        }
         break;
       case 'phone_number':
-        notionProperties[key] = { phone_number: value };
+        if (typeof value === 'string') {
+            notionProperties[key] = { phone_number: value };
+        }
         break;
       case 'status':
-        notionProperties[key] = { status: { name: value } };
+        if (typeof value === 'string') {
+            notionProperties[key] = { status: { name: value } };
+        }
+        break;
+      // Relation and rollup properties are handled in separate passes in deployWorkspaceToNotion
+      // and are more complex to handle with sample data without a full dependency graph.
+      // We will skip them here to avoid errors.
+      case 'relation':
+      case 'rollup':
         break;
     }
   }
